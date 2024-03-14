@@ -1,0 +1,10 @@
+[run]
+omit =
+        *test_*
+        *__init__*
+
+
+[report]
+omit =
+        *test_*
+        *__init__*

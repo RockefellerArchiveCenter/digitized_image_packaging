@@ -1,0 +1,16 @@
+{
+    "lock_version": 0,
+    "expression": "1950-1969",
+    "begin": "1950",
+    "end": "1969",
+    "created_by": "k.martin",
+    "last_modified_by": "k.martin",
+    "create_time": "2021-01-05T05:33:38Z",
+    "system_mtime": "2021-01-05T05:33:38Z",
+    "user_mtime": "2021-01-05T05:33:38Z",
+    "date_type": "inclusive",
+    "label": "creation",
+    "era": "ce",
+    "calendar": "gregorian",
+    "jsonmodel_type": "date"
+}

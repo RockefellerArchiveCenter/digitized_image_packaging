@@ -1,0 +1,33 @@
+dist: bionic
+language: python
+python:
+  - "3.10"
+cache: pip
+env:
+  global:
+    - TIMESTAMP: $(date '+%Y%m%d%H%M%S')
+    - APP_NAME: 'digitized_av_packaging'
+
+before_script:
+  - pip install tox
+
+script: tox
+
+before_deploy:
+  - pip install awscli
+  - docker build -t ${APP_NAME} --target build .
+  - if [ ! -d deploy_scripts ]; then git clone https://github.com/RockefellerArchiveCenter/deploy_scripts.git; fi
+deploy:
+  - provider: script
+    script: >-
+      bash deploy_scripts/containers/push_image_to_ecr.sh $APP_NAME
+    on:
+      branch: development
+  - provider: script
+    script: >-
+      bash deploy_scripts/containers/add_tag_to_image.sh $APP_NAME dev prod
+    on:
+      branch: base
+
+notifications:
+  email: false
