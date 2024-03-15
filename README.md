@@ -1,5 +1,5 @@
 # digitized_image_packaging
-Packager for digitized audiovisual assets.
+Packager for digitized still image and textual assets.
 
 [![Build Status](https://app.travis-ci.com/RockefellerArchiveCenter/digitized_image_packaging.svg?branch=base)](https://app.travis-ci.com/RockefellerArchiveCenter/digitized_image_packaging)
 
