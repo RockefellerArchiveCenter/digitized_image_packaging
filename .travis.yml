@@ -6,7 +6,7 @@ cache: pip
 env:
   global:
     - TIMESTAMP: $(date '+%Y%m%d%H%M%S')
-    - APP_NAME: 'digitized_av_packaging'
+    - APP_NAME: 'digitized_image_packaging'
 
 before_script:
   - pip install tox
