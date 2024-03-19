@@ -3,4 +3,3 @@ ArchivesSnake~=0.9
 bagit~=1.8
 boto3~=1.26
 python-dateutil~=2.8
-ffmpeg-python~=0.2
