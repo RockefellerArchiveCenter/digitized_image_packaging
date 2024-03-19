@@ -15,12 +15,7 @@ from src.package import Packager
 ARGS = ['us-east-1', 'digitized-image-packaging-role-arn', '/dev/digitized_image_packaging',
         'b90862f3baceaae3b7418c78f9d50d52', "1,2", "tmp",
         "source", "destination", "topic"]
-
-
-@pytest.fixture
-def packager():
-    packager = Packager(*ARGS)
-    return packager
+packager = Packager(*ARGS)
 
 
 @pytest.fixture(autouse=True)
@@ -103,9 +98,9 @@ def test_run_with_exception(
 @patch('src.package.Packager.get_date_range')
 @patch('src.package.Packager.format_aspace_date')
 @patch('src.package.Packager.uri_from_refid')
-def test_create_bag(mock_uri, mock_dates,
-                    mock_range, packager):
+def test_create_bag(mock_uri, mock_dates, mock_range):
     """Asserts bag is created as expected."""
+    packager = Packager(*ARGS)
     packager.as_client = ASpace().client
     as_uri = "/repositories/2/archival_objects/1234"
     as_dates = ('1999-01-01', '2000-12-31')
@@ -132,8 +127,9 @@ def test_create_bag(mock_uri, mock_dates,
 
 
 @patch('asnake.client.web_client.ASnakeClient.get')
-def test_uri_from_refid(mock_get, packager):
+def test_uri_from_refid(mock_get):
     """Asserts refids are translated to URIs as expected."""
+    packager = Packager(*ARGS)
     mock_get.return_value.text = "v3.0.2"
     packager.as_client = ASpace().client
     packager.as_repo = '2'
@@ -155,8 +151,9 @@ def test_uri_from_refid(mock_get, packager):
                 packager.uri_from_refid(refid)
 
 
-def test_get_date_range(packager):
+def test_get_date_range():
     """Asserts date ranges are parsed as expected."""
+    packager = Packager(*ARGS)
     for fixture_path, expected in [
             ('single.json', ('1950', '1950')),
             ('single_range.json', ('1950', '1969')),
@@ -171,8 +168,9 @@ def test_get_date_range(packager):
             assert returned[1] == expected[1]
 
 
-def test_format_aspace_date(packager):
+def test_format_aspace_date():
     """Asserts dates are formatted as expected."""
+    packager = Packager(*ARGS)
     for input, expected in [
             (['1950', '1969'], ('1950-01-01', '1969-12-31')),
             (['1950-03', '1969-04'], ('1950-03-01', '1969-04-30')),
@@ -183,8 +181,9 @@ def test_format_aspace_date(packager):
         assert returned[1] == expected[1]
 
 
-def test_compress_bag(packager):
+def test_compress_bag():
     """Asserts compressed files are correctly created and original directory is removed."""
+    packager = Packager(*ARGS)
     fixture_path = Path('tests', 'fixtures', packager.refid)
     tmp_path = Path(packager.tmp_dir, packager.refid)
     copytree(fixture_path, tmp_path)
@@ -214,8 +213,9 @@ def test_deliver_package():
     assert not tmp_path.exists()
 
 
-def test_cleanup_successful_job(packager):
+def test_cleanup_successful_job():
     """Asserts successful job is cleaned up as expected."""
+    packager = Packager(*ARGS)
     fixture_path = Path(
         'tests',
         'fixtures',
@@ -230,8 +230,9 @@ def test_cleanup_successful_job(packager):
     assert len(source_objects) == 0
 
 
-def test_cleanup_failed_job(packager):
+def test_cleanup_failed_job():
     """Asserts failed job is cleaned up as expected."""
+    packager = Packager(*ARGS)
     fixture_path = Path(
         'tests',
         'fixtures',
