@@ -261,7 +261,7 @@ class Packager(object):
                 },
                 'message': {
                     'DataType': 'String',
-                    'StringValue': f'{str(exception)}\n\n<pre>{tb}</pre>',
+                    'StringValue': f'{str(exception)}\n\n```{tb}```',
                 }
             })
         logging.debug('Failure notification delivered.')
