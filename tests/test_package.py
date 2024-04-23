@@ -284,7 +284,8 @@ def test_deliver_success_notification(mock_role):
 @mock_sqs
 @mock_sts
 @patch('src.package.Packager.get_client_with_role')
-def test_deliver_failure_notification(mock_role):
+@patch('traceback.format_exception')
+def test_deliver_failure_notification(mock_traceback, mock_role):
     """Asserts failure notifications are delivered as expected."""
     packager = Packager(*ARGS)
     sns = boto3.client('sns', region_name='us-east-1')
@@ -301,6 +302,7 @@ def test_deliver_failure_notification(mock_role):
     packager.sns_topic = topic_arn
     exception_message = "foo"
     exception = Exception(exception_message)
+    mock_traceback.return_value = ['baz', 'buzz']
 
     packager.deliver_failure_notification(exception)
 
@@ -310,3 +312,4 @@ def test_deliver_failure_notification(mock_role):
     assert message_body['MessageAttributes']['outcome']['Value'] == 'FAILURE'
     assert message_body['MessageAttributes']['refid']['Value'] == packager.refid
     assert exception_message in message_body['MessageAttributes']['message']['Value']
+    assert message_body['MessageAttributes']['traceback']['Value'] == 'baz'

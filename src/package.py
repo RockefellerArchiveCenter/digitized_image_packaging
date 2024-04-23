@@ -261,7 +261,11 @@ class Packager(object):
                 },
                 'message': {
                     'DataType': 'String',
-                    'StringValue': f'{str(exception)}\n\n```{tb}```',
+                    'StringValue': str(exception),
+                },
+                'traceback': {
+                    'DataType': 'String',
+                    'StringValue': tb,
                 }
             })
         logging.debug('Failure notification delivered.')
