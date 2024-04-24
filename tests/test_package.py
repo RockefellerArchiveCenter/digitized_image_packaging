@@ -6,6 +6,7 @@ from unittest.mock import DEFAULT, MagicMock, patch
 import bagit
 import boto3
 import pytest
+import shortuuid
 from asnake.aspace import ASpace
 from moto import mock_s3, mock_sns, mock_sqs, mock_ssm, mock_sts
 from moto.core import DEFAULT_ACCOUNT_ID
@@ -14,7 +15,7 @@ from src.package import Packager
 
 ARGS = ['us-east-1', 'digitized-image-packaging-role-arn', '/dev/digitized_image_packaging',
         'b90862f3baceaae3b7418c78f9d50d52', "1,2", "tmp",
-        "source", "destination", "topic"]
+        "source", "destination", "pdf_bucket", "topic"]
 packager = Packager(*ARGS)
 
 
@@ -56,14 +57,16 @@ def test_get_config(mock_role):
 
 
 @patch('src.package.Packager.get_config')
+@patch('src.package.Packager.uri_from_refid')
 @patch('src.package.Packager.move_to_tmp')
 @patch('src.package.Packager.create_bag')
 @patch('src.package.Packager.compress_bag')
 @patch('src.package.Packager.deliver_package')
+@patch('src.package.Packager.deliver_pdf')
 @patch('src.package.Packager.cleanup_successful_job')
 @patch('src.package.Packager.deliver_success_notification')
-def test_run(mock_notification, mock_cleanup, mock_deliver, mock_compress, mock_create,
-             mock_move, mock_config):
+def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress, mock_create,
+             mock_move, mock_as_uri, mock_config):
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
     bag_dir = Path(packager.tmp_dir, packager.refid)
@@ -72,22 +75,24 @@ def test_run(mock_notification, mock_cleanup, mock_deliver, mock_compress, mock_
     packager.run()
     mock_cleanup.assert_called_once_with()
     mock_notification.assert_called_once_with()
+    mock_pdf.assert_called_once_with(bag_dir)
     mock_deliver.assert_called_once_with(compressed_name)
     mock_compress.assert_called_once_with(bag_dir)
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids)
     mock_move.assert_called_once_with(bag_dir)
+    mock_as_uri.assert_called_once_with(packager.refid)
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
 
 @patch('src.package.Packager.get_config')
-@patch('src.package.Packager.move_to_tmp')
+@patch('src.package.Packager.uri_from_refid')
 @patch('src.package.Packager.cleanup_failed_job')
 @patch('src.package.Packager.deliver_failure_notification')
 def test_run_with_exception(
-        mock_notification, mock_cleanup, mock_move, mock_config):
+        mock_notification, mock_cleanup, mock_as_uri, mock_config):
     packager = Packager(*ARGS)
-    exception = Exception("Error moving.")
-    mock_move.side_effect = exception
+    exception = Exception("No matching refid found.")
+    mock_as_uri.side_effect = exception
     packager.run()
     mock_cleanup.assert_called_once_with(
         Path(packager.tmp_dir, packager.refid))
@@ -97,14 +102,12 @@ def test_run_with_exception(
 
 @patch('src.package.Packager.get_date_range')
 @patch('src.package.Packager.format_aspace_date')
-@patch('src.package.Packager.uri_from_refid')
-def test_create_bag(mock_uri, mock_dates, mock_range):
+def test_create_bag(mock_dates, mock_range):
     """Asserts bag is created as expected."""
     packager = Packager(*ARGS)
     packager.as_client = ASpace().client
-    as_uri = "/repositories/2/archival_objects/1234"
+    packager.as_uri = "/repositories/2/archival_objects/1234"
     as_dates = ('1999-01-01', '2000-12-31')
-    mock_uri.return_value = as_uri
     mock_dates.return_value = as_dates
     mock_range.return_value = as_dates
 
@@ -119,7 +122,7 @@ def test_create_bag(mock_uri, mock_dates, mock_range):
                 'End-Date', 'Origin', 'Rights-ID', 'BagIt-Profile-Identifier']:
         assert key in bag.info
     assert bag.info['Origin'] == 'digitization'
-    assert bag.info['ArchivesSpace-URI'] == as_uri
+    assert bag.info['ArchivesSpace-URI'] == packager.as_uri
     assert bag.info['Start-Date'] == as_dates[0]
     assert bag.info['End-Date'] == as_dates[1]
     assert bag.info['Rights-ID'] == ARGS[4].split(',')
@@ -211,6 +214,27 @@ def test_deliver_package():
         Bucket=packager.destination_bucket,
         Key=compressed_file)
     assert not tmp_path.exists()
+
+
+@mock_s3
+@mock_sts
+def test_deliver_pdf():
+    """Asserts compressed package is delivered and local copy is removed."""
+    packager = Packager(*ARGS)
+    packager.as_uri = "/repositories/2/archival_objects/1234"
+    obj_key = shortuuid.uuid(packager.as_uri)
+
+    fixture_path = Path('tests', 'fixtures', packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.refid)
+    copytree(fixture_path, tmp_path)
+
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.create_bucket(Bucket=packager.destination_bucket)
+
+    packager.deliver_pdf(tmp_path)
+    assert s3.get_object(
+        Bucket=packager.destination_bucket,
+        Key=obj_key)
 
 
 def test_cleanup_successful_job():

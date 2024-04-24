@@ -7,6 +7,7 @@ from shutil import copytree, rmtree
 
 import bagit
 import boto3
+import shortuuid
 from asnake.aspace import ASpace
 from asnake.utils import find_closest_value
 from aws_assume_role_lib import assume_role
@@ -21,7 +22,8 @@ logging.getLogger("bagit").setLevel(logging.ERROR)
 class Packager(object):
 
     def __init__(self, region, role_arn, ssm_parameter_path, refid,
-                 rights_ids, tmp_dir, source_dir, destination_bucket, sns_topic):
+                 rights_ids, tmp_dir, source_dir, destination_bucket,
+                 pdf_destination_bucket, sns_topic):
         self.region = region
         self.role_arn = role_arn
         self.refid = refid
@@ -29,6 +31,7 @@ class Packager(object):
         self.tmp_dir = tmp_dir
         self.source_dir = source_dir
         self.destination_bucket = destination_bucket
+        self.pdf_destination_bucket = pdf_destination_bucket
         self.sns_topic = sns_topic
         self.ssm_parameter_path = ssm_parameter_path
         self.service_name = 'digitized_image_packaging'
@@ -49,7 +52,9 @@ class Packager(object):
                 password=config.get('AS_PASSWORD')
             ).client
             self.as_repo = config.get('AS_REPO')
+            self.as_uri = self.uri_from_refid(bag_dir.name)
             self.move_to_tmp(bag_dir)
+            self.deliver_pdf(bag_dir)
             self.create_bag(bag_dir, self.rights_ids)
             compressed_path = self.compress_bag(bag_dir)
             self.deliver_package(compressed_path)
@@ -144,13 +149,12 @@ class Packager(object):
             bag_dir (pathlib.Path): directory containing local files.
             rights_ids (list): List of rights IDs to apply to the package.
         """
-        obj_uri = self.uri_from_refid(bag_dir.name)
         start_date, end_date = self.get_date_range(
-            find_closest_value(obj_uri, 'dates', self.as_client))
+            find_closest_value(self.as_uri, 'dates', self.as_client))
         formatted_start_date, formatted_end_date = self.format_aspace_date(
             start_date, end_date)
         metadata = {
-            'ArchivesSpace-URI': obj_uri,
+            'ArchivesSpace-URI': self.as_uri,
             'Start-Date': formatted_start_date,
             'End-Date': formatted_end_date,
             'Origin': 'digitization',
@@ -176,11 +180,11 @@ class Packager(object):
         logging.debug(f'Compressed bag {compressed_path} created.')
         return compressed_path
 
-    def deliver_package(self, package_path):
-        """Delivers packaged files to destination.
+    def upload_file(self, source_file_path, destination_path, content_type):
+        """Uploads file to an S3 bucket.
 
         Args:
-            package_path (pathlib.Path): path of compressed archive to upload.
+            source_file_path (pathlib.Path): Path of
         """
         client = self.get_client_with_role('s3', self.role_arn)
         transfer_config = boto3.s3.transfer.TransferConfig(
@@ -189,13 +193,30 @@ class Packager(object):
             multipart_chunksize=1024 * 25,
             use_threads=True)
         client.upload_file(
-            package_path,
+            source_file_path,
             self.destination_bucket,
-            package_path.name,
-            ExtraArgs={'ContentType': 'application/gzip'},
+            destination_path,
+            ExtraArgs={'ContentType': content_type},
             Config=transfer_config)
+
+    def deliver_package(self, package_path):
+        """Delivers packaged files to destination.
+
+        Args:
+            package_path (pathlib.Path): path of compressed archive to upload.
+        """
+        self.upload_file(package_path, package_path.name, 'application/gzip')
         package_path.unlink()
         logging.debug('Packaged delivered.')
+
+    def deliver_pdf(self, package_path):
+        pdf_path = package_path / 'service_edited' / f'{package_path.name}.pdf'
+        dimes_identifier = shortuuid.uuid(self.as_uri)
+        self.upload_file(
+            pdf_path,
+            dimes_identifier,
+            'application/pdf')
+        logging.debug('PDF delivered.')
 
     def cleanup_successful_job(self):
         """Remove artifacts from successful job."""
@@ -309,6 +330,7 @@ if __name__ == '__main__':
     tmp_dir = os.environ.get('TMP_DIR')
     source_dir = os.environ.get('SOURCE_DIR')
     destination_bucket = os.environ.get('AWS_DESTINATION_BUCKET')
+    pdf_destination_bucket = os.environ.get('AWS_PDF_DESTINATION_BUCKET')
     sns_topic = os.environ.get('AWS_SNS_TOPIC')
     ssm_parameter_path = f"/{os.environ.get('ENV')}/{os.environ.get('APP_CONFIG_PATH')}"
 
@@ -321,4 +343,5 @@ if __name__ == '__main__':
         tmp_dir,
         source_dir,
         destination_bucket,
+        pdf_destination_bucket,
         sns_topic).run()
