@@ -214,7 +214,7 @@ class Packager(object):
         dimes_identifier = shortuuid.uuid(self.as_uri)
         self.upload_file(
             pdf_path,
-            dimes_identifier,
+            f'pdfs/{dimes_identifier}',
             'application/pdf')
         logging.debug('PDF delivered.')
 

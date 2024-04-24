@@ -234,7 +234,7 @@ def test_deliver_pdf():
     packager.deliver_pdf(tmp_path)
     assert s3.get_object(
         Bucket=packager.destination_bucket,
-        Key=obj_key)
+        Key=f'pdfs/{obj_key}')
 
 
 def test_cleanup_successful_job():
