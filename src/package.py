@@ -212,6 +212,7 @@ class Packager(object):
     def deliver_pdf(self, package_path):
         pdf_path = package_path / 'service_edited' / f'{package_path.name}.pdf'
         dimes_identifier = shortuuid.uuid(self.as_uri)
+        logging.info(dimes_identifier)
         self.upload_file(
             pdf_path,
             f'pdfs/{dimes_identifier}',
