@@ -199,11 +199,6 @@ class Packager(object):
             destination_path,
             ExtraArgs={'ContentType': content_type},
             Config=transfer_config)
-        logging.info(
-            source_file_path,
-            self.destination_bucket,
-            destination_path,
-            content_type)
 
     def deliver_package(self, package_path):
         """Delivers packaged files to destination.
