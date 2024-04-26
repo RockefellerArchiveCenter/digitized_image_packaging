@@ -180,7 +180,8 @@ class Packager(object):
         logging.debug(f'Compressed bag {compressed_path} created.')
         return compressed_path
 
-    def upload_file(self, source_file_path, destination_path, content_type):
+    def upload_file(self, bucket, source_file_path,
+                    destination_path, content_type):
         """Uploads file to an S3 bucket.
 
         Args:
@@ -194,7 +195,7 @@ class Packager(object):
             use_threads=True)
         client.upload_file(
             source_file_path,
-            self.destination_bucket,
+            bucket,
             destination_path,
             ExtraArgs={'ContentType': content_type},
             Config=transfer_config)
@@ -210,7 +211,11 @@ class Packager(object):
         Args:
             package_path (pathlib.Path): path of compressed archive to upload.
         """
-        self.upload_file(package_path, package_path.name, 'application/gzip')
+        self.upload_file(
+            self.destination_bucket,
+            package_path,
+            package_path.name,
+            'application/gzip')
         package_path.unlink()
         logging.debug('Packaged delivered.')
 
@@ -218,6 +223,7 @@ class Packager(object):
         pdf_path = package_path / 'service_edited' / f'{package_path.name}.pdf'
         dimes_identifier = shortuuid.uuid(self.as_uri)
         self.upload_file(
+            self.pdf_destination_bucket,
             pdf_path,
             f'pdfs/{dimes_identifier}',
             'application/pdf')
