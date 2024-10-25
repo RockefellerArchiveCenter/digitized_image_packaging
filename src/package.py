@@ -3,7 +3,7 @@ import os
 import tarfile
 import traceback
 from pathlib import Path
-from shutil import copytree, rmtree
+from shutil import copy2, rmtree
 
 import bagit
 import boto3
@@ -74,13 +74,19 @@ class Packager(object):
         return assumed_role_session.client(resource)
 
     def move_to_tmp(self, dest_dir):
-        """Moves files from source directory into temporary directory
+        """Copies files from source directory into temporary directory
 
         Returns:
             dest_dir (Pathlib.Path instances): destination directory of files.
         """
         source_dir = Path(self.source_dir, self.refid)
-        copytree(source_dir, dest_dir)
+        dest_dir.mkdir()
+        for src, dest in [
+                ((source_dir / 'master'), dest_dir),
+                ((source_dir / 'master_edited'), dest_dir / 'service')]:
+            dest.mkdir(exist_ok=True)
+            for fp in src.glob('*.tif'):
+                copy2(fp, f'{dest}/{fp.name}')
 
     def uri_from_refid(self, refid):
         """Uses the find_by_id endpoint in AS to return the URI of an archival object."""
