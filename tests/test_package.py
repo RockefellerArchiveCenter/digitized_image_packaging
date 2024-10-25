@@ -100,6 +100,21 @@ def test_run_with_exception(
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
 
+def test_move_to_tmp():
+    packager = Packager(*ARGS)
+    src_path = Path(packager.source_dir, packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.refid)
+    fixture_path = Path('tests', 'fixtures', packager.refid)
+    copytree(fixture_path, src_path)
+
+    packager.move_to_tmp(tmp_path)
+
+    assert tmp_path.is_dir()
+    assert (tmp_path / 'service').is_dir()
+    assert len(list(tmp_path.glob('*.tif'))) == 2
+    assert len(list((tmp_path / 'service').glob('*.tif'))) == 2
+
+
 @patch('src.package.Packager.get_date_range')
 @patch('src.package.Packager.format_aspace_date')
 def test_create_bag(mock_dates, mock_range):
