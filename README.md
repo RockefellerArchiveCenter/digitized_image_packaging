@@ -1,8 +1,6 @@
 # digitized_image_packaging
 Packager for digitized still image and textual assets.
 
-[![Build Status](https://app.travis-ci.com/RockefellerArchiveCenter/digitized_image_packaging.svg?branch=base)](https://app.travis-ci.com/RockefellerArchiveCenter/digitized_image_packaging)
-
 ## Getting Started
 
 If you have [git](https://git-scm.com/) and [Docker](https://www.docker.com/community-edition) installed, using this repository is as simple as:
@@ -20,7 +18,7 @@ This repository is intended to be deployed as an ECS Task in AWS infrastructure.
 
 ## Input and Output Structure
 
-This application expects to receive packages with the following structure, 
+This application expects to receive packages with the following structure,
 where `identifier` is a unique identifier for a package:
 
 /{identifier}
