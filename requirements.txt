@@ -6,7 +6,7 @@
 #
 archivessnake==0.10.1
     # via -r requirements.in
-attrs==24.2.0
+attrs==24.3.0
     # via archivessnake
 aws-assume-role-lib==2.10.0
     # via -r requirements.in
@@ -14,17 +14,17 @@ bagit==1.8.1
     # via -r requirements.in
 boltons==24.1.0
     # via archivessnake
-boto3==1.35.71
+boto3==1.35.90
     # via
     #   -r requirements.in
     #   aws-assume-role-lib
-botocore==1.35.71
+botocore==1.35.90
     # via
     #   boto3
     #   s3transfer
-certifi==2024.8.30
+certifi==2024.12.14
     # via requests
-charset-normalizer==3.4.0
+charset-normalizer==3.4.1
     # via requests
 idna==3.10
     # via requests
@@ -40,7 +40,7 @@ python-dateutil==2.9.0.post0
     #   botocore
 pyyaml==6.0.2
     # via archivessnake
-rapidfuzz==3.10.1
+rapidfuzz==3.11.0
     # via archivessnake
 requests==2.32.3
     # via archivessnake
@@ -48,11 +48,11 @@ s3transfer==0.10.4
     # via boto3
 shortuuid==1.0.13
     # via -r requirements.in
-six==1.16.0
+six==1.17.0
     # via python-dateutil
 structlog==24.4.0
     # via archivessnake
-urllib3==2.2.3
+urllib3==2.3.0
     # via
     #   botocore
     #   requests
