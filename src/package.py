@@ -220,8 +220,9 @@ class Packager(object):
         package_path.unlink()
         logging.debug('Packaged delivered.')
 
-    def deliver_pdf(self, package_path):
-        pdf_path = package_path / 'service_edited' / f'{package_path.name}.pdf'
+    def deliver_pdf(self):
+        pdf_path = self.source_dir / {self.refid} / \
+            'service_edited' / f'{self.refid}.pdf'
         dimes_identifier = shortuuid.uuid(self.as_uri)
         self.upload_file(
             self.pdf_destination_bucket,
