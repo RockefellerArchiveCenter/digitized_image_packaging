@@ -75,7 +75,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     packager.run()
     mock_cleanup.assert_called_once_with()
     mock_notification.assert_called_once_with()
-    mock_pdf.assert_called_once_with(bag_dir)
+    mock_pdf.assert_called_once_with()
     mock_deliver.assert_called_once_with(compressed_name)
     mock_compress.assert_called_once_with(bag_dir)
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids)
