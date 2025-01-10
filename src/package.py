@@ -54,7 +54,7 @@ class Packager(object):
             self.as_repo = config.get('AS_REPO')
             self.as_uri = self.uri_from_refid(bag_dir.name)
             self.move_to_tmp(bag_dir)
-            self.deliver_pdf(bag_dir)
+            self.deliver_pdf()
             self.create_bag(bag_dir, self.rights_ids)
             compressed_path = self.compress_bag(bag_dir)
             self.deliver_package(compressed_path)
