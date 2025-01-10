@@ -221,7 +221,7 @@ class Packager(object):
         logging.debug('Packaged delivered.')
 
     def deliver_pdf(self):
-        pdf_path = self.source_dir / {self.refid} / \
+        pdf_path = self.source_dir / self.refid / \
             'service_edited' / f'{self.refid}.pdf'
         dimes_identifier = shortuuid.uuid(self.as_uri)
         self.upload_file(
