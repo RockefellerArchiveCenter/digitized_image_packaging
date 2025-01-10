@@ -240,13 +240,13 @@ def test_deliver_pdf():
     obj_key = shortuuid.uuid(packager.as_uri)
 
     fixture_path = Path('tests', 'fixtures', packager.refid)
-    tmp_path = Path(packager.tmp_dir, packager.refid)
-    copytree(fixture_path, tmp_path)
+    src_path = Path(packager.source_dir, packager.refid)
+    copytree(fixture_path, src_path)
 
     s3 = boto3.client('s3', region_name='us-east-1')
     s3.create_bucket(Bucket=packager.pdf_destination_bucket)
 
-    packager.deliver_pdf(tmp_path)
+    packager.deliver_pdf()
     assert s3.get_object(
         Bucket=packager.pdf_destination_bucket,
         Key=f'pdfs/{obj_key}')
