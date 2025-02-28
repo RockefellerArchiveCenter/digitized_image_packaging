@@ -39,6 +39,22 @@ def setup_and_teardown():
         rmtree(dir)
 
 
+class MockResponse(object):
+    """Class used to mock HTTP responses"""
+
+    def __init__(self, json_data, status_code, **kwargs):
+        """Sets data, status code, and any other data passed in."""
+        self.json_data = json_data
+        self.status_code = status_code
+        self.text = "v4.0.0"
+        for k in kwargs:
+            setattr(self, k, kwargs[k])
+
+    def json(self):
+        """Mocks the json method of an HTTP response"""
+        return self.json_data
+
+
 @mock_ssm
 @mock_sts
 @patch('src.package.Packager.get_client_with_role')
@@ -117,8 +133,12 @@ def test_move_to_tmp():
 
 @patch('src.package.Packager.get_date_range')
 @patch('src.package.Packager.format_aspace_date')
-def test_create_bag(mock_dates, mock_range):
+@patch('src.package.find_closest_value')
+@patch('asnake.client.ASnakeClient.get')
+def test_create_bag(mock_get, mock_find_closest, mock_dates, mock_range):
     """Asserts bag is created as expected."""
+    as_data = {"display_string": "foobar"}
+    mock_get.return_value = MockResponse(as_data, 200)
     packager = Packager(*ARGS)
     packager.as_client = ASpace().client
     packager.as_uri = "/repositories/2/archival_objects/1234"
@@ -141,6 +161,7 @@ def test_create_bag(mock_dates, mock_range):
     assert bag.info['Start-Date'] == as_dates[0]
     assert bag.info['End-Date'] == as_dates[1]
     assert bag.info['Rights-ID'] == ARGS[4].split(',')
+    assert bag.info['Title'] == 'foobar'
     assert bag.info['BagIt-Profile-Identifier'] == 'zorya_bagit_profile.json'
 
 
