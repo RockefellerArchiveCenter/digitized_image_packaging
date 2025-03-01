@@ -155,8 +155,9 @@ class Packager(object):
             bag_dir (pathlib.Path): directory containing local files.
             rights_ids (list): List of rights IDs to apply to the package.
         """
+        as_ao = self.as_client.get(self.as_uri).json()
         start_date, end_date = self.get_date_range(
-            find_closest_value(self.as_uri, 'dates', self.as_client))
+            find_closest_value(as_ao, 'dates', self.as_client))
         formatted_start_date, formatted_end_date = self.format_aspace_date(
             start_date, end_date)
         metadata = {
@@ -165,6 +166,7 @@ class Packager(object):
             'End-Date': formatted_end_date,
             'Origin': 'digitization',
             'Rights-ID': rights_ids,
+            'Title': as_ao['display_string'],
             'BagIt-Profile-Identifier': 'zorya_bagit_profile.json'}
         bagit.make_bag(bag_dir, metadata)
         logging.debug(
