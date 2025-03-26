@@ -100,7 +100,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
     bag_dir = Path(packager.tmp_dir, packager.refid)
-    aquila_baseurl = 'https://aquila.rockarch.org'
+    aquila_baseurl = 'https://aquila.rockarch.org/api/'
     config = {'AQUILA_BASEURL': aquila_baseurl}
     mock_config.return_value = config
     as_uri = '/repositories/2/archival_objects/1'
@@ -171,7 +171,7 @@ def test_get_as_data(mock_get, mock_find_closest, mock_dates, mock_range):
 def test_has_embargo(mock_acts, mock_post):
     """Asserts embargoed status is corrrectly determined."""
     packager = Packager(*ARGS)
-    aquila_baseurl = "https://aquila.rockarch.org"
+    aquila_baseurl = "https://aquila.rockarch.org/api"
     rights_ids = ['1', '2']
     start_date = '1999-01-01'
     end_date = '2000-12-31'
@@ -201,7 +201,7 @@ def test_has_embargo(mock_acts, mock_post):
 
             assert output == expected
             mock_post.assert_called_once_with(
-                f'{aquila_baseurl}/rights',
+                f'{aquila_baseurl}/rights-assemble/',
                 json={
                     'identifiers': rights_ids,
                     'start_date': start_date,
