@@ -2,16 +2,19 @@ import logging
 import os
 import tarfile
 import traceback
+from datetime import datetime
 from pathlib import Path
 from shutil import copy2, rmtree
 
 import bagit
 import boto3
+import botocore
 import shortuuid
 from asnake.aspace import ASpace
 from asnake.utils import find_closest_value
 from aws_assume_role_lib import assume_role
 from dateutil import parser, relativedelta
+from requests import Session
 
 logging.basicConfig(
     level=int(os.environ.get('LOGGING_LEVEL', logging.INFO)),
@@ -23,7 +26,8 @@ class Packager(object):
 
     def __init__(self, region, role_arn, ssm_parameter_path, refid,
                  rights_ids, tmp_dir, source_dir, destination_bucket,
-                 pdf_destination_bucket, sns_topic):
+                 pdf_destination_bucket, embargoed_destination_bucket,
+                 embargoed_pdf_destination_bucket, sns_topic):
         self.region = region
         self.role_arn = role_arn
         self.refid = refid
@@ -31,7 +35,9 @@ class Packager(object):
         self.tmp_dir = tmp_dir
         self.source_dir = source_dir
         self.destination_bucket = destination_bucket
+        self.embargoed_destination_bucket = embargoed_destination_bucket
         self.pdf_destination_bucket = pdf_destination_bucket
+        self.embargoed_pdf_destination_bucket = embargoed_pdf_destination_bucket
         self.sns_topic = sns_topic
         self.ssm_parameter_path = ssm_parameter_path
         self.service_name = 'digitized_image_packaging'
@@ -52,10 +58,13 @@ class Packager(object):
                 password=config.get('AS_PASSWORD')
             ).client
             self.as_repo = config.get('AS_REPO')
-            self.as_uri = self.uri_from_refid(bag_dir.name)
+            as_uri = self.uri_from_refid(bag_dir.name)
+            as_data = self.get_as_data(as_uri)
+            self.is_embargoed = self.has_embargo(
+                config.get('AQUILA_BASEURL'), self.rights_ids, as_data)
             self.move_to_tmp(bag_dir)
-            self.deliver_pdf()
-            self.create_bag(bag_dir, self.rights_ids)
+            self.deliver_pdf(as_uri)
+            self.create_bag(bag_dir, self.rights_ids, as_data)
             compressed_path = self.compress_bag(bag_dir)
             self.deliver_package(compressed_path)
             self.cleanup_successful_job()
@@ -68,16 +77,45 @@ class Packager(object):
             self.deliver_failure_notification(e)
 
     def get_client_with_role(self, resource, role_arn):
-        """Gets Boto3 client which authenticates with a specific IAM role."""
+        """Gets Boto3 client which authenticates with a specific IAM role.
+
+        Args:
+            resource (str): AWS resource client should be associated with.
+            role_arn (str): ARN for assumed role session.
+
+        Returns:
+            client (boto3.Client): client with assumed role session.
+        """
         session = boto3.Session()
         assumed_role_session = assume_role(session, role_arn)
         return assumed_role_session.client(resource)
 
+    def get_as_data(self, as_uri):
+        """Fetches data from ArchivesSpace.
+
+        Args:
+            as_uri (str): URI for archival object in ArchivesSpace.
+
+        Returns:
+            as_data (dict): formatted data from ArchivesSpace.
+        """
+        ao = self.as_client.get(as_uri).json()
+        start_date, end_date = self.get_date_range(
+            find_closest_value(ao, 'dates', self.as_client))
+        formatted_start_date, formatted_end_date = self.format_aspace_date(
+            start_date, end_date)
+        return {
+            "start_date": formatted_start_date,
+            "end_date": formatted_end_date,
+            "display_string": ao['display_string'],
+            "uri": as_uri
+        }
+
     def move_to_tmp(self, dest_dir):
         """Copies files from source directory into temporary directory
 
-        Returns:
-            dest_dir (Pathlib.Path instances): destination directory of files.
+        Args:
+            dest_dir (pathlib.Path instances): destination directory of files.
         """
         source_dir = Path(self.source_dir, self.refid)
         dest_dir.mkdir()
@@ -89,7 +127,14 @@ class Packager(object):
                 copy2(fp, f'{dest}/{fp.name}')
 
     def uri_from_refid(self, refid):
-        """Uses the find_by_id endpoint in AS to return the URI of an archival object."""
+        """Uses the find_by_id endpoint in AS to return the URI of an archival object.
+
+        Args:
+            refid (str): refid for an archival object in ArchivesSpace.
+
+        Returns:
+            as_uri (str): URI for archival object matching refid.
+        """
         find_by_refid_url = f"repositories/{self.as_repo}/find_by_id/archival_objects?ref_id[]={refid}"
         resp = self.as_client.get(find_by_refid_url)
         resp.raise_for_status()
@@ -100,11 +145,59 @@ class Packager(object):
             raise Exception("{} results found for search {}. Expected one result.".format(
                 len(results.get("archival_objects")), find_by_refid_url))
 
+    def get_active_rights_acts(self, acts):
+        """Evaluates rights statement act end dates to determine if it is still active.
+
+        Args:
+            acts (list): Acts from rights statements.
+
+        Returns:
+            acts (list): Acts which are currently active.
+        """
+        current_date = datetime.now()
+        for idx, act in reversed(list(enumerate(acts))):
+            if act.get('end_date'):
+                statement_end = datetime.strptime(act['end_date'], "%Y-%m-%d")
+                if (current_date > statement_end):
+                    acts.pop(idx)
+        return acts
+
+    def has_embargo(self, aquila_baseurl, rights_ids, as_data):
+        """Determines if a package is embargoed from online access.
+
+        Args:
+            aquila_baseurl (str): Base URL for Aquila.
+            rights_ids (list): Identifiers for rights statements in Aquila.
+            as_data (dict): Data from ArchivesSpace.
+
+        Returns:
+            embargo (bool): if the package is embargoed from online access.
+        """
+        http = Session()
+        data = {
+            'identifiers': rights_ids,
+            'start_date': as_data['start_date'],
+            'end_date': as_data['end_date']
+        }
+        resp = http.post(
+            f'{aquila_baseurl.rstrip("/")}/rights',
+            json=data)
+        resp.raise_for_status()
+        rights_statements = resp.json()['rights_statements']
+
+        for rights_statement in rights_statements:
+            for granted in self.get_active_rights_acts(
+                    rights_statement['rights_granted']):
+                if granted['act'] in [
+                        'publish', 'disseminate'] and granted['grant_restriction'] != 'allow':
+                    return True
+        return False
+
     def get_date_range(self, dates_array):
         """Gets maximum and minimum dates from an AS date array.
 
         Args:
-            dates (list of dicts): ArchivesSpace date list
+            dates_array (list of dicts): ArchivesSpace date list
 
         Returns:
             start_date (str): earliest date in date list.
@@ -148,25 +241,21 @@ class Packager(object):
             formatted_end = end_date
         return formatted_start, formatted_end
 
-    def create_bag(self, bag_dir, rights_ids):
+    def create_bag(self, bag_dir, rights_ids, as_data):
         """Creates a BagIt bag from a directory.
 
         Args:
             bag_dir (pathlib.Path): directory containing local files.
             rights_ids (list): List of rights IDs to apply to the package.
+            as_data (dict): Data from ArchivesSpace.
         """
-        as_ao = self.as_client.get(self.as_uri).json()
-        start_date, end_date = self.get_date_range(
-            find_closest_value(as_ao, 'dates', self.as_client))
-        formatted_start_date, formatted_end_date = self.format_aspace_date(
-            start_date, end_date)
         metadata = {
-            'ArchivesSpace-URI': self.as_uri,
-            'Start-Date': formatted_start_date,
-            'End-Date': formatted_end_date,
+            'ArchivesSpace-URI': as_data['uri'],
+            'Start-Date': as_data['start_date'],
+            'End-Date': as_data['end_date'],
             'Origin': 'digitization',
             'Rights-ID': rights_ids,
-            'Title': as_ao['display_string'],
+            'Title': as_data['display_string'],
             'BagIt-Profile-Identifier': 'zorya_bagit_profile.json'}
         bagit.make_bag(bag_dir, metadata)
         logging.debug(
@@ -189,11 +278,15 @@ class Packager(object):
         return compressed_path
 
     def upload_file(self, bucket, source_file_path,
-                    destination_path, content_type):
+                    destination_path, content_type, increment_if_exists):
         """Uploads file to an S3 bucket.
 
         Args:
-            source_file_path (pathlib.Path): Path of
+            bucket (string): AWS S3 bucket to upload file to.
+            source_file_path (pathlib.Path): local file to upload.
+            destination_path (string): target key in S3 bucket.
+            content_type (string): content type for file to upload.
+            increment_if_exists (boolean): check to see if file exist and add incrementing iterator
         """
         client = self.get_client_with_role('s3', self.role_arn)
         transfer_config = boto3.s3.transfer.TransferConfig(
@@ -201,12 +294,43 @@ class Packager(object):
             max_concurrency=10,
             multipart_chunksize=1024 * 25,
             use_threads=True)
-        client.upload_file(
-            source_file_path,
-            bucket,
-            destination_path,
-            ExtraArgs={'ContentType': content_type},
-            Config=transfer_config)
+
+        if increment_if_exists:
+            try:
+                client.head_object(
+                    Bucket=bucket,
+                    Key=destination_path)
+                split_path = destination_path.split('.')
+                extension = '.'.join(split_path[1:])
+                split_destination = split_path[0].split('_')
+                if len(split_destination) == 2:
+                    current_iterator = int(split_destination[1])
+                    updated_destination = f'{split_destination[0]}_{current_iterator + 1}'
+                else:
+                    updated_destination = f'{split_destination[0]}_1'
+                self.upload_file(
+                    bucket,
+                    source_file_path,
+                    f'{updated_destination}.{extension}',
+                    content_type,
+                    increment_if_exists)
+            except botocore.exceptions.ClientError as e:
+                if e.response['Error']['Code'] == "404":
+                    client.upload_file(
+                        source_file_path,
+                        bucket,
+                        destination_path,
+                        ExtraArgs={'ContentType': content_type},
+                        Config=transfer_config)
+        else:
+            client.upload_file(
+                source_file_path,
+                bucket,
+                destination_path,
+                ExtraArgs={'ContentType': content_type},
+                Config=transfer_config)
+        logging.debug(
+            f'Source file {source_file_path} uploaded to {bucket} as {destination_path}')
 
     def deliver_package(self, package_path):
         """Delivers packaged files to destination.
@@ -214,27 +338,36 @@ class Packager(object):
         Args:
             package_path (pathlib.Path): path of compressed archive to upload.
         """
+        destination = self.embargoed_destination_bucket if self.is_embargoed else self.destination_bucket
         self.upload_file(
-            self.destination_bucket,
+            destination,
             package_path,
             package_path.name,
-            'application/gzip')
+            'application/gzip',
+            self.is_embargoed)
         package_path.unlink()
-        logging.debug('Packaged delivered.')
+        logging.debug(f'Packaged delivered to {destination}.')
 
-    def deliver_pdf(self):
+    def deliver_pdf(self, as_uri):
+        """Delivers PDF file to destination.
+
+        Args:
+            as_uri (str): URI for archival object in ArchivesSpace
+        """
         pdf_path = Path(
             self.source_dir,
             self.refid,
             'service_edited',
             f'{self.refid}.pdf')
-        dimes_identifier = shortuuid.uuid(self.as_uri)
+        destination = self.embargoed_pdf_destination_bucket if self.is_embargoed else self.pdf_destination_bucket
+        target_path = f'{self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
         self.upload_file(
-            self.pdf_destination_bucket,
+            destination,
             pdf_path,
-            f'pdfs/{dimes_identifier}',
-            'application/pdf')
-        logging.debug('PDF delivered.')
+            target_path,
+            'application/pdf',
+            self.is_embargoed)
+        logging.debug(f'PDF delivered to {destination}.')
 
     def cleanup_successful_job(self):
         """Remove artifacts from successful job."""
@@ -349,6 +482,10 @@ if __name__ == '__main__':
     source_dir = os.environ.get('SOURCE_DIR')
     destination_bucket = os.environ.get('AWS_DESTINATION_BUCKET')
     pdf_destination_bucket = os.environ.get('AWS_PDF_DESTINATION_BUCKET')
+    embargoed_destination_bucket = os.environ.get(
+        'AWS_EMBARGOED_DESTINATION_BUCKET')
+    embargoed_pdf_destination_bucket = os.environ.get(
+        'AWS_EMBARGOED_PDF_DESTINATION_BUCKET')
     sns_topic = os.environ.get('AWS_SNS_TOPIC')
     ssm_parameter_path = f"/{os.environ.get('ENV')}/{os.environ.get('APP_CONFIG_PATH')}"
 
@@ -362,4 +499,6 @@ if __name__ == '__main__':
         source_dir,
         destination_bucket,
         pdf_destination_bucket,
+        embargoed_destination_bucket,
+        embargoed_pdf_destination_bucket,
         sns_topic).run()
