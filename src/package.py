@@ -180,7 +180,7 @@ class Packager(object):
             'end_date': as_data['end_date']
         }
         resp = http.post(
-            f'{aquila_baseurl.rstrip("/")}/rights',
+            f'{aquila_baseurl.rstrip("/")}/rights-assemble/',
             json=data)
         resp.raise_for_status()
         rights_statements = resp.json()['rights_statements']
