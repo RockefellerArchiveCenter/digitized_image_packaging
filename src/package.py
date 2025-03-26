@@ -322,6 +322,8 @@ class Packager(object):
                         destination_path,
                         ExtraArgs={'ContentType': content_type},
                         Config=transfer_config)
+                else:
+                    raise Exception(e)
         else:
             client.upload_file(
                 source_file_path,
