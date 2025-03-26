@@ -31,8 +31,11 @@ jobs:
       - name: Run pre-commit autoupdate
         run: pre-commit autoupdate
 
-      - name: Run pip-compile
+      - name: Update dependencies
         run: pip-compile --upgrade
+
+      - name: Update test dependencies
+        run: pip-compile --upgrade test_requirements.in -o test_requirements.txt
 
       - name: Run GitHub Actions Version Updater
         uses: saadmk11/github-actions-version-updater@v0.8.1
