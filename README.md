@@ -21,6 +21,7 @@ This repository is intended to be deployed as an ECS Task in AWS infrastructure.
 This application expects to receive packages with the following structure,
 where `identifier` is a unique identifier for a package:
 
+```
 /{identifier}
     /master
         {identifier}_001.tif
@@ -32,9 +33,11 @@ where `identifier` is a unique identifier for a package:
         {identifier}_003.tif
     /service_edited
         {identifier}.pdf
+```
 
 It will produce packages with the following structure:
 
+```
 /{identifier}
     {identifier}_001.tif
     {identifier}_002.tif
@@ -43,6 +46,7 @@ It will produce packages with the following structure:
         {identifier}_001.tif
         {identifier}_002.tif
         {identifier}_003.tif
+```
 
 ## License
 

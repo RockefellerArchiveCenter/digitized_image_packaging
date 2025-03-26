@@ -1,0 +1,23 @@
+[
+    {
+        "act": "publish",
+        "grant_restriction": "disallow",
+        "start_date": "1890-05-01",
+        "end_date": "1940-05-31",
+        "note": ""
+    },
+    {
+        "act": "disseminate",
+        "grant_restriction": "disallow",
+        "start_date": "1890-05-01",
+        "end_date": null,
+        "note": ""
+    },
+    {
+        "act": "replicate",
+        "grant_restriction": "disallow",
+        "start_date": "1890-05-01",
+        "end_date": "3000-01-01",
+        "note": ""
+    }
+]

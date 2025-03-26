@@ -1,0 +1,16 @@
+[
+    {
+        "act": "disseminate",
+        "grant_restriction": "allow",
+        "start_date": "1890-05-01",
+        "end_date": null,
+        "note": ""
+    },
+    {
+        "act": "publish",
+        "grant_restriction": "allow",
+        "start_date": "1890-05-01",
+        "end_date": null,
+        "note": ""
+    }
+]

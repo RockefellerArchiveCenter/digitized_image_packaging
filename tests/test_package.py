@@ -8,14 +8,23 @@ import boto3
 import pytest
 import shortuuid
 from asnake.aspace import ASpace
-from moto import mock_s3, mock_sns, mock_sqs, mock_ssm, mock_sts
+from moto import mock_aws
 from moto.core import DEFAULT_ACCOUNT_ID
 
 from src.package import Packager
 
-ARGS = ['us-east-1', 'digitized-image-packaging-role-arn', '/dev/digitized_image_packaging',
-        'b90862f3baceaae3b7418c78f9d50d52', "1,2", "tmp",
-        "source", "destination", "pdf_bucket", "topic"]
+ARGS = ['us-east-1',
+        'digitized-image-packaging-role-arn',
+        '/dev/digitized_image_packaging',
+        'b90862f3baceaae3b7418c78f9d50d52',
+        '1,2',
+        'tmp',
+        'source',
+        'destination_bucket',
+        'pdf_bucket',
+        'embargoed_destination_bucket',
+        'embargoed_pdf_bucket',
+        'topic']
 packager = Packager(*ARGS)
 
 
@@ -54,11 +63,14 @@ class MockResponse(object):
         """Mocks the json method of an HTTP response"""
         return self.json_data
 
+    def raise_for_status(self):
+        pass
 
-@mock_ssm
-@mock_sts
+
+@mock_aws
 @patch('src.package.Packager.get_client_with_role')
 def test_get_config(mock_role):
+    """Asserts configuration is fetched as expected."""
     packager = Packager(*ARGS)
     ssm = boto3.client('ssm', region_name='us-east-1')
     mock_role.return_value = ssm
@@ -74,6 +86,8 @@ def test_get_config(mock_role):
 
 @patch('src.package.Packager.get_config')
 @patch('src.package.Packager.uri_from_refid')
+@patch('src.package.Packager.get_as_data')
+@patch('src.package.Packager.has_embargo')
 @patch('src.package.Packager.move_to_tmp')
 @patch('src.package.Packager.create_bag')
 @patch('src.package.Packager.compress_bag')
@@ -82,20 +96,30 @@ def test_get_config(mock_role):
 @patch('src.package.Packager.cleanup_successful_job')
 @patch('src.package.Packager.deliver_success_notification')
 def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress, mock_create,
-             mock_move, mock_as_uri, mock_config):
+             mock_move, mock_has_embargo, mock_as_data, mock_as_uri, mock_config):
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
     bag_dir = Path(packager.tmp_dir, packager.refid)
+    aquila_baseurl = 'https://aquila.rockarch.org/api/'
+    config = {'AQUILA_BASEURL': aquila_baseurl}
+    mock_config.return_value = config
+    as_uri = '/repositories/2/archival_objects/1'
+    mock_as_uri.return_value = as_uri
     compressed_name = "foo.tar.gz"
     mock_compress.return_value = compressed_name
+    as_data = {}
+    mock_as_data.return_value = as_data
     packager.run()
     mock_cleanup.assert_called_once_with()
     mock_notification.assert_called_once_with()
-    mock_pdf.assert_called_once_with()
+    mock_pdf.assert_called_once_with(as_uri)
     mock_deliver.assert_called_once_with(compressed_name)
     mock_compress.assert_called_once_with(bag_dir)
-    mock_create.assert_called_once_with(bag_dir, packager.rights_ids)
+    mock_create.assert_called_once_with(bag_dir, packager.rights_ids, as_data)
     mock_move.assert_called_once_with(bag_dir)
+    mock_has_embargo.assert_called_once_with(
+        aquila_baseurl, packager.rights_ids, as_data)
+    mock_as_data.assert_called_once_with(as_uri)
     mock_as_uri.assert_called_once_with(packager.refid)
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
@@ -106,6 +130,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
 @patch('src.package.Packager.deliver_failure_notification')
 def test_run_with_exception(
         mock_notification, mock_cleanup, mock_as_uri, mock_config):
+    """Asserts exception is handled correctly."""
     packager = Packager(*ARGS)
     exception = Exception("No matching refid found.")
     mock_as_uri.side_effect = exception
@@ -116,7 +141,89 @@ def test_run_with_exception(
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
 
+@patch('src.package.Packager.get_date_range')
+@patch('src.package.Packager.format_aspace_date')
+@patch('src.package.find_closest_value')
+@patch('asnake.client.ASnakeClient.get')
+def test_get_as_data(mock_get, mock_find_closest, mock_dates, mock_range):
+    """Asserts data is fetched from AS as expected."""
+    as_data = {"display_string": "foobar"}
+    mock_get.return_value = MockResponse(as_data, 200)
+    packager = Packager(*ARGS)
+    packager.as_client = ASpace().client
+    as_uri = "/repositories/2/archival_objects/1234"
+    as_dates = ('1999-01-01', '2000-12-31')
+    mock_dates.return_value = as_dates
+    mock_range.return_value = as_dates
+
+    data = packager.get_as_data(as_uri)
+
+    assert data == {
+        'display_string': 'foobar',
+        'start_date': as_dates[0],
+        'end_date': as_dates[1],
+        'uri': as_uri
+    }
+
+
+@patch('requests.Session.post')
+@patch('src.package.Packager.get_active_rights_acts')
+def test_has_embargo(mock_acts, mock_post):
+    """Asserts embargoed status is corrrectly determined."""
+    packager = Packager(*ARGS)
+    aquila_baseurl = "https://aquila.rockarch.org/api"
+    rights_ids = ['1', '2']
+    start_date = '1999-01-01'
+    end_date = '2000-12-31'
+    as_data = {
+        'start_date': start_date,
+        'end_date': end_date,
+    }
+    mock_post.return_value = MockResponse(
+        {'rights_statements':
+            [
+                {'rights_granted': []},
+                {'rights_granted': []}
+            ]
+         },
+        200)
+    for fixture, expected in [
+            ('no_acts.json', False),
+            ('disallow_disseminate.json', True),
+            ('disallow_publish.json', True),
+            ('disseminate_conditional.json', True),
+            ('disseminate_allow.json', False)]:
+        with open(Path('tests', 'fixtures', 'rights', fixture), 'r') as df:
+            active_acts = json.load(df)
+            mock_acts.return_value = active_acts
+
+            output = packager.has_embargo(aquila_baseurl, rights_ids, as_data)
+
+            assert output == expected
+            mock_post.assert_called_once_with(
+                f'{aquila_baseurl}/rights-assemble/',
+                json={
+                    'identifiers': rights_ids,
+                    'start_date': start_date,
+                    'end_date': end_date}
+            )
+            mock_post.reset_mock()
+            mock_acts.reset_mock()
+
+
+def test_get_active_rights_acts():
+    """Asserts active rights statements are correctly parsed."""
+    packager = Packager(*ARGS)
+    with open(Path('tests', 'fixtures', 'rights', 'active_acts_input.json'), 'r') as df:
+        acts = json.load(df)
+        parsed = packager.get_active_rights_acts(acts)
+        with open(Path('tests', 'fixtures', 'rights', 'active_acts_output.json'), 'r') as pf:
+            expected = json.load(pf)
+            assert parsed == expected
+
+
 def test_move_to_tmp():
+    """Asserts packages are moved to temp directory as expected."""
     packager = Packager(*ARGS)
     src_path = Path(packager.source_dir, packager.refid)
     tmp_path = Path(packager.tmp_dir, packager.refid)
@@ -131,35 +238,30 @@ def test_move_to_tmp():
     assert len(list((tmp_path / 'service').glob('*.tif'))) == 2
 
 
-@patch('src.package.Packager.get_date_range')
-@patch('src.package.Packager.format_aspace_date')
-@patch('src.package.find_closest_value')
-@patch('asnake.client.ASnakeClient.get')
-def test_create_bag(mock_get, mock_find_closest, mock_dates, mock_range):
+def test_create_bag():
     """Asserts bag is created as expected."""
-    as_data = {"display_string": "foobar"}
-    mock_get.return_value = MockResponse(as_data, 200)
+    as_data = {
+        'start_date': '1999-01-01',
+        'end_date': '2000-12-31',
+        'display_string': 'foobar',
+        'uri': '/repositories/2/archival_objects/1234'
+    }
     packager = Packager(*ARGS)
-    packager.as_client = ASpace().client
-    packager.as_uri = "/repositories/2/archival_objects/1234"
-    as_dates = ('1999-01-01', '2000-12-31')
-    mock_dates.return_value = as_dates
-    mock_range.return_value = as_dates
 
     fixture_path = Path('tests', 'fixtures', packager.refid)
     tmp_path = Path(packager.tmp_dir, packager.refid)
     copytree(fixture_path, tmp_path)
 
-    packager.create_bag(tmp_path, packager.rights_ids)
+    packager.create_bag(tmp_path, packager.rights_ids, as_data)
     bag = bagit.Bag(str(tmp_path))
     assert bag.is_valid()
     for key in ['ArchivesSpace-URI', 'Start-Date',
                 'End-Date', 'Origin', 'Rights-ID', 'BagIt-Profile-Identifier']:
         assert key in bag.info
     assert bag.info['Origin'] == 'digitization'
-    assert bag.info['ArchivesSpace-URI'] == packager.as_uri
-    assert bag.info['Start-Date'] == as_dates[0]
-    assert bag.info['End-Date'] == as_dates[1]
+    assert bag.info['ArchivesSpace-URI'] == '/repositories/2/archival_objects/1234'
+    assert bag.info['Start-Date'] == '1999-01-01'
+    assert bag.info['End-Date'] == '2000-12-31'
     assert bag.info['Rights-ID'] == ARGS[4].split(',')
     assert bag.info['Title'] == 'foobar'
     assert bag.info['BagIt-Profile-Identifier'] == 'zorya_bagit_profile.json'
@@ -233,44 +335,100 @@ def test_compress_bag():
     assert not tmp_path.exists()
 
 
-@mock_s3
-@mock_sts
-def test_deliver_package():
-    """Asserts compressed package is delivered and local copy is removed."""
+@mock_aws
+def test_upload_file_already_exists():
+    """Asserts files are not overwritten when expected."""
     packager = Packager(*ARGS)
+    s3 = boto3.client('s3', region_name='us-east-1')
+    s3.create_bucket(Bucket=packager.destination_bucket)
+    s3.put_object(
+        Body=b'test content',
+        Bucket=packager.destination_bucket,
+        Key=f'{packager.refid}.tar.gz')
+
     compressed_file = f"{packager.refid}.tar.gz"
     fixture_path = Path('tests', 'fixtures', compressed_file)
     tmp_path = Path(packager.tmp_dir, compressed_file)
     copyfile(fixture_path, tmp_path)
-    s3 = boto3.client('s3', region_name='us-east-1')
-    s3.create_bucket(Bucket=packager.destination_bucket)
 
-    packager.deliver_package(tmp_path)
+    for expected_incrementor in range(1, 3):
+        packager.upload_file(
+            packager.destination_bucket,
+            tmp_path,
+            f'{packager.refid}.tar.gz',
+            'application/gzip',
+            True)
+
+        assert s3.get_object(
+            Bucket=packager.destination_bucket,
+            Key=f'{packager.refid}_{expected_incrementor}.tar.gz')
+
+    for expected_incrementor in range(1, 3):
+        s3.delete_object(
+            Bucket=packager.destination_bucket,
+            Key=f'{packager.refid}_{expected_incrementor}.tar.gz')
+
+    packager.upload_file(
+        packager.destination_bucket,
+        tmp_path,
+        f'{packager.refid}.tar.gz',
+        'application/gzip',
+        False)
+
     assert s3.get_object(
         Bucket=packager.destination_bucket,
-        Key=compressed_file)
-    assert not tmp_path.exists()
+        Key=f'{packager.refid}.tar.gz')
+
+    for expected_incrementor in range(1, 2):
+        with pytest.raises(Exception):
+            s3.head_object(
+                Bucket=packager.destination_bucket,
+                Key=f'{packager.refid}_{expected_incrementor}_{expected_incrementor}.tar.gz')
 
 
-@mock_s3
-@mock_sts
+def test_deliver_package():
+    """Asserts unembargoed compressed package is delivered and local copy is removed."""
+    packager = Packager(*ARGS)
+    compressed_file = f"{packager.refid}.tar.gz"
+    fixture_path = Path('tests', 'fixtures', compressed_file)
+    tmp_path = Path(packager.tmp_dir, compressed_file)
+
+    for is_embargoed, destination_bucket in [
+            (False, packager.destination_bucket),
+            (True, packager.embargoed_destination_bucket)]:
+        with mock_aws():
+            copyfile(fixture_path, tmp_path)
+            packager.is_embargoed = is_embargoed
+            s3 = boto3.client('s3', region_name='us-east-1')
+            s3.create_bucket(Bucket=destination_bucket)
+            packager.deliver_package(tmp_path)
+            assert s3.get_object(
+                Bucket=destination_bucket,
+                Key=compressed_file)
+            assert not tmp_path.exists()
+
+
 def test_deliver_pdf():
     """Asserts compressed package is delivered and local copy is removed."""
     packager = Packager(*ARGS)
-    packager.as_uri = "/repositories/2/archival_objects/1234"
-    obj_key = shortuuid.uuid(packager.as_uri)
-
+    as_uri = "/repositories/2/archival_objects/1234"
     fixture_path = Path('tests', 'fixtures', packager.refid)
     src_path = Path(packager.source_dir, packager.refid)
     copytree(fixture_path, src_path)
 
-    s3 = boto3.client('s3', region_name='us-east-1')
-    s3.create_bucket(Bucket=packager.pdf_destination_bucket)
+    for is_embargoed, destination_bucket, destination_key in [
+            (False, packager.pdf_destination_bucket,
+             f'pdfs/{shortuuid.uuid(as_uri)}'),
+            (True, packager.embargoed_pdf_destination_bucket, f'{packager.refid}.pdf')]:
+        with mock_aws():
+            packager.is_embargoed = is_embargoed
+            s3 = boto3.client('s3', region_name='us-east-1')
+            s3.create_bucket(Bucket=destination_bucket)
 
-    packager.deliver_pdf()
-    assert s3.get_object(
-        Bucket=packager.pdf_destination_bucket,
-        Key=f'pdfs/{obj_key}')
+            packager.deliver_pdf(as_uri)
+            assert s3.get_object(
+                Bucket=destination_bucket,
+                Key=destination_key)
 
 
 def test_cleanup_successful_job():
@@ -311,9 +469,7 @@ def test_cleanup_failed_job():
     assert not compressed_tmp_path.is_file()
 
 
-@mock_sns
-@mock_sqs
-@mock_sts
+@mock_aws
 @patch('src.package.Packager.get_client_with_role')
 def test_deliver_success_notification(mock_role):
     """Assert success notifications are delivered as expected."""
@@ -340,9 +496,7 @@ def test_deliver_success_notification(mock_role):
     assert message_body['MessageAttributes']['refid']['Value'] == packager.refid
 
 
-@mock_sns
-@mock_sqs
-@mock_sts
+@mock_aws
 @patch('src.package.Packager.get_client_with_role')
 @patch('traceback.format_exception')
 def test_deliver_failure_notification(mock_traceback, mock_role):

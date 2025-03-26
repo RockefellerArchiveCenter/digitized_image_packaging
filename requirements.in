@@ -1,6 +1,7 @@
 aws-assume-role-lib~=2.10
-ArchivesSnake~=0.9
+ArchivesSnake~=0.10
 bagit~=1.8
-boto3~=1.26
-python-dateutil~=2.8
+boto3~=1.37
+python-dateutil~=2.9
+requests~=2.32
 shortuuid~=1.0
