@@ -14,11 +14,11 @@ bagit==1.8.1
     # via -r requirements.in
 boltons==25.0.0
     # via archivessnake
-boto3==1.37.18
+boto3==1.37.24
     # via
     #   -r requirements.in
     #   aws-assume-role-lib
-botocore==1.37.18
+botocore==1.37.24
     # via
     #   boto3
     #   s3transfer
