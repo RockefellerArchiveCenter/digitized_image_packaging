@@ -4,9 +4,9 @@
 #
 #    pip-compile --output-file=test_requirements.txt test_requirements.in
 #
-boto3==1.37.18
+boto3==1.37.24
     # via moto
-botocore==1.37.18
+botocore==1.37.24
     # via
     #   boto3
     #   moto
@@ -17,7 +17,7 @@ cffi==1.17.1
     # via cryptography
 charset-normalizer==3.4.1
     # via requests
-coverage==7.7.1
+coverage==7.8.0
     # via -r test_requirements.in
 cryptography==44.0.2
     # via moto
@@ -35,7 +35,7 @@ markupsafe==3.0.2
     # via
     #   jinja2
     #   werkzeug
-moto==5.1.1
+moto==5.1.2
     # via -r test_requirements.in
 packaging==24.2
     # via pytest
