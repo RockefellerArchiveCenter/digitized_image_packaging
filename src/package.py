@@ -17,7 +17,7 @@ from asnake.utils import find_closest_value
 from aws_assume_role_lib import assume_role
 from dateutil import parser, relativedelta
 
-from src.clients import AquilaClient
+from .clients import AquilaClient
 
 logging.basicConfig(
     level=int(os.environ.get('LOGGING_LEVEL', logging.INFO)),
