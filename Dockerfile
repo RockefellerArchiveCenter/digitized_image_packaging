@@ -10,4 +10,4 @@ RUN pip install -r test_requirements.txt
 COPY tests tests
 
 FROM base AS build
-CMD [ "python", "src/package.py" ]
+CMD [ "python", "-m", "src.package.py" ]
