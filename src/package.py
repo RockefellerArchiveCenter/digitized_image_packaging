@@ -284,7 +284,7 @@ class Packager(object):
         root_dir.mkdir()
         with tarfile.open(str(inner_compressed_path), "w:gz") as tar:
             tar.add(bag_dir, arcname=bag_identifier)
-        with open(Path(root_dir, f"{self.refid}.json"), "w") as json_file:
+        with open(Path(root_dir, f"{bag_identifier}.json"), "w") as json_file:
             json.dump(
                 bag_json,
                 json_file,
