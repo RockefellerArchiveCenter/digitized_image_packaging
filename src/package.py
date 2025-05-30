@@ -54,7 +54,7 @@ class Packager(object):
             f'Packaging started for package {self.refid}.')
         try:
             bag_dir = Path(self.tmp_dir, self.refid)
-            bag_identifier = uuid4()
+            bag_identifier = str(uuid4())
             config = self.get_config(self.ssm_parameter_path)
             aquila_client = AquilaClient(config.get('AQUILA_BASEURL'))
             self.as_client = ASpace(
