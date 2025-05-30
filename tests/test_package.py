@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from shutil import copyfile, copytree, rmtree
-from unittest.mock import DEFAULT, MagicMock, patch
+from unittest.mock import ANY, DEFAULT, MagicMock, patch
 
 import bagit
 import boto3
@@ -106,8 +106,8 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     mock_notification.assert_called_once_with()
     mock_pdf.assert_called_once_with(as_uri)
     mock_deliver.assert_called_once_with(compressed_name)
-    mock_compress.assert_called_once_with(bag_dir, {})
-    mock_bag_json.assert_called_once()
+    mock_compress.assert_called_once_with(ANY, bag_dir, {})
+    mock_bag_json.assert_called_once_with(ANY, "foo", [])
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids, as_data)
     mock_move.assert_called_once_with(bag_dir)
     mock_has_embargo.assert_called_once_with(rights_data)
@@ -320,8 +320,9 @@ def test_compress_bag():
     tmp_path = Path(packager.tmp_dir, packager.refid)
     copytree(fixture_path, tmp_path)
     bagit.make_bag(tmp_path)
+    bag_identifier = "123456789"
 
-    compressed = packager.compress_bag(tmp_path, {})
+    compressed = packager.compress_bag(bag_identifier, tmp_path, {})
     assert compressed.is_file()
     assert not tmp_path.exists()
 
