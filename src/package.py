@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import tarfile
@@ -5,6 +6,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from shutil import copy2, rmtree
+from uuid import uuid4
 
 import bagit
 import boto3
@@ -14,7 +16,8 @@ from asnake.aspace import ASpace
 from asnake.utils import find_closest_value
 from aws_assume_role_lib import assume_role
 from dateutil import parser, relativedelta
-from requests import Session
+
+from .clients import AquilaClient
 
 logging.basicConfig(
     level=int(os.environ.get('LOGGING_LEVEL', logging.INFO)),
@@ -52,6 +55,7 @@ class Packager(object):
         try:
             bag_dir = Path(self.tmp_dir, self.refid)
             config = self.get_config(self.ssm_parameter_path)
+            aquila_client = AquilaClient(config.get('AQUILA_BASEURL'))
             self.as_client = ASpace(
                 baseurl=config.get('AS_BASEURL'),
                 username=config.get('AS_USERNAME'),
@@ -60,12 +64,15 @@ class Packager(object):
             self.as_repo = config.get('AS_REPO')
             as_uri = self.uri_from_refid(bag_dir.name)
             as_data = self.get_as_data(as_uri)
-            self.is_embargoed = self.has_embargo(
-                config.get('AQUILA_BASEURL'), self.rights_ids, as_data)
+            rights_data = aquila_client.get_rights_data(
+                self.rights_ids, as_data)
+            self.is_embargoed = self.has_embargo(rights_data)
             self.move_to_tmp(bag_dir)
             self.deliver_pdf(as_uri)
             self.create_bag(bag_dir, self.rights_ids, as_data)
-            compressed_path = self.compress_bag(bag_dir)
+            bag_json = self.get_bag_json(
+                uuid4(), as_data['display_string'], rights_data)
+            compressed_path = self.compress_bag(bag_dir, bag_json)
             self.deliver_package(compressed_path)
             self.cleanup_successful_job()
             self.deliver_success_notification()
@@ -162,29 +169,15 @@ class Packager(object):
                     acts.pop(idx)
         return acts
 
-    def has_embargo(self, aquila_baseurl, rights_ids, as_data):
+    def has_embargo(self, rights_statements):
         """Determines if a package is embargoed from online access.
 
         Args:
-            aquila_baseurl (str): Base URL for Aquila.
-            rights_ids (list): Identifiers for rights statements in Aquila.
-            as_data (dict): Data from ArchivesSpace.
+            rights_statements (list of dicts): rights data from Aquila.
 
         Returns:
             embargo (bool): if the package is embargoed from online access.
         """
-        http = Session()
-        data = {
-            'identifiers': rights_ids,
-            'start_date': as_data['start_date'],
-            'end_date': as_data['end_date']
-        }
-        resp = http.post(
-            f'{aquila_baseurl.rstrip("/")}/rights-assemble/',
-            json=data)
-        resp.raise_for_status()
-        rights_statements = resp.json()['rights_statements']
-
         for rights_statement in rights_statements:
             for granted in self.get_active_rights_acts(
                     rights_statement['rights_granted']):
@@ -261,8 +254,19 @@ class Packager(object):
         logging.debug(
             f'Bag created from {bag_dir} with Rights IDs {rights_ids}.')
 
-    def compress_bag(self, bag_dir):
+    def get_bag_json(self, identifier, title, rights_data):
+        return {
+            "identifier": identifier,
+            "title": title,
+            "origin": 'digitization',
+            "rights_statements": rights_data
+        }
+
+    def compress_bag(self, bag_dir, bag_json):
         """Creates a compressed archive file from a bag.
+
+        This archive file contains JSON bag data, as well as another
+        archive containing the binary files as a Bagit bag.
 
         Args:
             bag_dir (pathlib.Path): directory containing local files.
@@ -271,9 +275,23 @@ class Packager(object):
             compressed_path (pathlib.Path): path of compressed archive.
         """
         compressed_path = Path(f"{bag_dir}.tar.gz")
+        with tarfile.open(str(compressed_path), "w:gz") as tar:  # Create compressed bag
+            tar.add(bag_dir, arcname=Path(bag_dir).name)
+        rmtree(bag_dir)  # Remove uncompressed bag files
+        bag_dir.mkdir()  # Create empty directory
+        # Move compressed bag to new directory
+        compressed_path.rename(Path(bag_dir, f"{self.refid}.tar.gz"))
+        with open(Path(bag_dir, f"{self.refid}.json"), "w") as json_file:
+            json.dump(
+                bag_json,
+                json_file,
+                indent=4,
+                sort_keys=True,
+                default=str)
+        # Create compressed archive containing JSON and compressed bag
         with tarfile.open(str(compressed_path), "w:gz") as tar:
             tar.add(bag_dir, arcname=Path(bag_dir).name)
-        rmtree(bag_dir)
+        rmtree(bag_dir)  # Remove source files
         logging.debug(f'Compressed bag {compressed_path} created.')
         return compressed_path
 
