@@ -54,6 +54,7 @@ class Packager(object):
             f'Packaging started for package {self.refid}.')
         try:
             bag_dir = Path(self.tmp_dir, self.refid)
+            bag_identifier = uuid4()
             config = self.get_config(self.ssm_parameter_path)
             aquila_client = AquilaClient(config.get('AQUILA_BASEURL'))
             self.as_client = ASpace(
@@ -71,8 +72,9 @@ class Packager(object):
             self.deliver_pdf(as_uri)
             self.create_bag(bag_dir, self.rights_ids, as_data)
             bag_json = self.get_bag_json(
-                uuid4(), as_data['display_string'], rights_data)
-            compressed_path = self.compress_bag(bag_dir, bag_json)
+                bag_identifier, as_data['display_string'], rights_data)
+            compressed_path = self.compress_bag(
+                bag_identifier, bag_dir, bag_json)
             self.deliver_package(compressed_path)
             self.cleanup_successful_job()
             self.deliver_success_notification()
@@ -262,38 +264,39 @@ class Packager(object):
             "rights_statements": rights_data
         }
 
-    def compress_bag(self, bag_dir, bag_json):
+    def compress_bag(self, bag_identifier, bag_dir, bag_json):
         """Creates a compressed archive file from a bag.
 
         This archive file contains JSON bag data, as well as another
         archive containing the binary files as a Bagit bag.
 
         Args:
+            bag_identifier (str): newly-minted UUID for the bag.
             bag_dir (pathlib.Path): directory containing local files.
+            bag_json (dict): data about the bag to include in a JSON file.
 
         Returns:
             compressed_path (pathlib.Path): path of compressed archive.
         """
-        compressed_path = Path(f"{bag_dir}.tar.gz")
-        with tarfile.open(str(compressed_path), "w:gz") as tar:  # Create compressed bag
-            tar.add(bag_dir, arcname=Path(bag_dir).name)
-        rmtree(bag_dir)  # Remove uncompressed bag files
-        bag_dir.mkdir()  # Create empty directory
-        # Move compressed bag to new directory
-        compressed_path.rename(Path(bag_dir, f"{self.refid}.tar.gz"))
-        with open(Path(bag_dir, f"{self.refid}.json"), "w") as json_file:
+        root_dir = Path(self.tmp_dir, bag_identifier)
+        outer_compressed_path = Path(self.tmp_dir, f"{bag_identifier}.tar.gz")
+        inner_compressed_path = root_dir / f"{bag_identifier}.tar.gz"
+        root_dir.mkdir()
+        with tarfile.open(str(inner_compressed_path), "w:gz") as tar:
+            tar.add(bag_dir, arcname=bag_identifier)
+        with open(Path(root_dir, f"{self.refid}.json"), "w") as json_file:
             json.dump(
                 bag_json,
                 json_file,
                 indent=4,
                 sort_keys=True,
                 default=str)
-        # Create compressed archive containing JSON and compressed bag
-        with tarfile.open(str(compressed_path), "w:gz") as tar:
-            tar.add(bag_dir, arcname=Path(bag_dir).name)
-        rmtree(bag_dir)  # Remove source files
-        logging.debug(f'Compressed bag {compressed_path} created.')
-        return compressed_path
+        with tarfile.open(str(outer_compressed_path), "w:gz") as tar:
+            tar.add(root_dir, arcname=bag_identifier)
+        rmtree(bag_dir)
+        rmtree(root_dir)
+        logging.debug(f'Compressed bag {outer_compressed_path} created.')
+        return outer_compressed_path
 
     def upload_file(self, bucket, source_file_path,
                     destination_path, content_type, increment_if_exists):
