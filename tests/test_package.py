@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from shutil import copyfile, copytree, rmtree
-from unittest.mock import DEFAULT, MagicMock, patch
+from unittest.mock import ANY, DEFAULT, MagicMock, patch
 
 import bagit
 import boto3
@@ -12,6 +12,8 @@ from moto import mock_aws
 from moto.core import DEFAULT_ACCOUNT_ID
 
 from src.package import Packager
+
+from .helpers import MockResponse
 
 ARGS = ['us-east-1',
         'digitized-image-packaging-role-arn',
@@ -48,25 +50,6 @@ def setup_and_teardown():
         rmtree(dir)
 
 
-class MockResponse(object):
-    """Class used to mock HTTP responses"""
-
-    def __init__(self, json_data, status_code, **kwargs):
-        """Sets data, status code, and any other data passed in."""
-        self.json_data = json_data
-        self.status_code = status_code
-        self.text = "v4.0.0"
-        for k in kwargs:
-            setattr(self, k, kwargs[k])
-
-    def json(self):
-        """Mocks the json method of an HTTP response"""
-        return self.json_data
-
-    def raise_for_status(self):
-        pass
-
-
 @mock_aws
 @patch('src.package.Packager.get_client_with_role')
 def test_get_config(mock_role):
@@ -85,42 +68,53 @@ def test_get_config(mock_role):
 
 
 @patch('src.package.Packager.get_config')
+@patch('src.clients.AquilaClient.__init__')
 @patch('src.package.Packager.uri_from_refid')
 @patch('src.package.Packager.get_as_data')
+@patch('src.clients.AquilaClient.get_rights_data')
 @patch('src.package.Packager.has_embargo')
 @patch('src.package.Packager.move_to_tmp')
 @patch('src.package.Packager.create_bag')
+@patch('src.package.Packager.get_bag_json')
 @patch('src.package.Packager.compress_bag')
 @patch('src.package.Packager.deliver_package')
 @patch('src.package.Packager.deliver_pdf')
 @patch('src.package.Packager.cleanup_successful_job')
 @patch('src.package.Packager.deliver_success_notification')
-def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress, mock_create,
-             mock_move, mock_has_embargo, mock_as_data, mock_as_uri, mock_config):
+def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress, mock_bag_json, mock_create,
+             mock_move, mock_has_embargo, mock_rights_data, mock_as_data, mock_as_uri, mock_aquila, mock_config):
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
     bag_dir = Path(packager.tmp_dir, packager.refid)
     aquila_baseurl = 'https://aquila.rockarch.org/api/'
+    mock_aquila.return_value = None
     config = {'AQUILA_BASEURL': aquila_baseurl}
     mock_config.return_value = config
     as_uri = '/repositories/2/archival_objects/1'
     mock_as_uri.return_value = as_uri
+    rights_data = []
+    mock_rights_data.return_value = rights_data
+    mock_bag_json.return_value = {}
     compressed_name = "foo.tar.gz"
     mock_compress.return_value = compressed_name
-    as_data = {}
+    as_data = {'display_string': 'foo'}
     mock_as_data.return_value = as_data
+
     packager.run()
+
     mock_cleanup.assert_called_once_with()
     mock_notification.assert_called_once_with()
     mock_pdf.assert_called_once_with(as_uri)
     mock_deliver.assert_called_once_with(compressed_name)
-    mock_compress.assert_called_once_with(bag_dir)
+    mock_compress.assert_called_once_with(ANY, bag_dir, {})
+    mock_bag_json.assert_called_once_with(ANY, "foo", [])
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids, as_data)
     mock_move.assert_called_once_with(bag_dir)
-    mock_has_embargo.assert_called_once_with(
-        aquila_baseurl, packager.rights_ids, as_data)
+    mock_has_embargo.assert_called_once_with(rights_data)
+    mock_rights_data.assert_called_once_with(packager.rights_ids, as_data)
     mock_as_data.assert_called_once_with(as_uri)
     mock_as_uri.assert_called_once_with(packager.refid)
+    mock_aquila.assert_called_once_with(aquila_baseurl)
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
 
@@ -166,27 +160,10 @@ def test_get_as_data(mock_get, mock_find_closest, mock_dates, mock_range):
     }
 
 
-@patch('requests.Session.post')
 @patch('src.package.Packager.get_active_rights_acts')
-def test_has_embargo(mock_acts, mock_post):
+def test_has_embargo(mock_acts):
     """Asserts embargoed status is corrrectly determined."""
     packager = Packager(*ARGS)
-    aquila_baseurl = "https://aquila.rockarch.org/api"
-    rights_ids = ['1', '2']
-    start_date = '1999-01-01'
-    end_date = '2000-12-31'
-    as_data = {
-        'start_date': start_date,
-        'end_date': end_date,
-    }
-    mock_post.return_value = MockResponse(
-        {'rights_statements':
-            [
-                {'rights_granted': []},
-                {'rights_granted': []}
-            ]
-         },
-        200)
     for fixture, expected in [
             ('no_acts.json', False),
             ('disallow_disseminate.json', True),
@@ -197,17 +174,14 @@ def test_has_embargo(mock_acts, mock_post):
             active_acts = json.load(df)
             mock_acts.return_value = active_acts
 
-            output = packager.has_embargo(aquila_baseurl, rights_ids, as_data)
+            output = packager.has_embargo(
+                [
+                    {'rights_granted': []},
+                    {'rights_granted': []}
+                ]
+            )
 
             assert output == expected
-            mock_post.assert_called_once_with(
-                f'{aquila_baseurl}/rights-assemble/',
-                json={
-                    'identifiers': rights_ids,
-                    'start_date': start_date,
-                    'end_date': end_date}
-            )
-            mock_post.reset_mock()
             mock_acts.reset_mock()
 
 
@@ -322,6 +296,23 @@ def test_format_aspace_date():
         assert returned[1] == expected[1]
 
 
+def test_get_bag_json():
+    """Asserts bag data is structured correctly."""
+    identifier = '123456789'
+    title = 'foo'
+    rights_data = []
+    packager = Packager(*ARGS)
+
+    output = packager.get_bag_json(identifier, title, rights_data)
+
+    assert output == {
+        "identifier": identifier,
+        "title": title,
+        "origin": 'digitization',
+        "rights_statements": rights_data
+    }
+
+
 def test_compress_bag():
     """Asserts compressed files are correctly created and original directory is removed."""
     packager = Packager(*ARGS)
@@ -329,8 +320,9 @@ def test_compress_bag():
     tmp_path = Path(packager.tmp_dir, packager.refid)
     copytree(fixture_path, tmp_path)
     bagit.make_bag(tmp_path)
+    bag_identifier = "123456789"
 
-    compressed = packager.compress_bag(tmp_path)
+    compressed = packager.compress_bag(bag_identifier, tmp_path, {})
     assert compressed.is_file()
     assert not tmp_path.exists()
 

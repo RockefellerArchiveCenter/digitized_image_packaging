@@ -12,6 +12,22 @@ docker build -t digitized_image_packaging .
 docker run digitized_image_packaging
 ```
 
+## Service Flow
+
+The service processes packages as follows:
+- Fetches the ArchivesSpace URI for the package by searching for the ArchivesSpace refid (which matches the bag name)
+- Fetches data about the package from ArchivesSpace
+- Gets structured rights data from Aquila
+- Determines if the bag content is embargoed by parsing structured rights data
+- Delivers derivative files
+- Creates and delivers a compressed, serialized bag containing the master files
+- Removes temporary files
+- Sends a success notification to an SNS topic
+
+If errors are encountered during any of the above steps, the service:
+- Cleans up any temporary files
+- Sends an error message to an SNS topic
+
 ## Usage
 
 This repository is intended to be deployed as an ECS Task in AWS infrastructure.
