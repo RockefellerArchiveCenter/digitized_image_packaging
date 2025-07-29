@@ -77,11 +77,12 @@ def test_get_config(mock_role):
 @patch('src.package.Packager.create_bag')
 @patch('src.package.Packager.get_bag_json')
 @patch('src.package.Packager.compress_bag')
+@patch('src.package.Packager.compress_embargoed_bag')
 @patch('src.package.Packager.deliver_package')
 @patch('src.package.Packager.deliver_pdf')
 @patch('src.package.Packager.cleanup_successful_job')
 @patch('src.package.Packager.deliver_success_notification')
-def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress, mock_bag_json, mock_create,
+def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compress_embargoed, mock_compress, mock_bag_json, mock_create,
              mock_move, mock_has_embargo, mock_rights_data, mock_as_data, mock_as_uri, mock_aquila, mock_config):
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
@@ -94,6 +95,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     mock_as_uri.return_value = as_uri
     rights_data = []
     mock_rights_data.return_value = rights_data
+    mock_has_embargo.return_value = False
     mock_bag_json.return_value = {}
     compressed_name = "foo.tar.gz"
     mock_compress.return_value = compressed_name
@@ -107,6 +109,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     mock_pdf.assert_called_once_with(as_uri)
     mock_deliver.assert_called_once_with(compressed_name)
     mock_compress.assert_called_once_with(ANY, bag_dir, {})
+    mock_compress_embargoed.assert_not_called()
     mock_bag_json.assert_called_once_with(ANY, "foo", [])
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids, as_data)
     mock_move.assert_called_once_with(bag_dir)
@@ -323,6 +326,18 @@ def test_compress_bag():
     bag_identifier = "123456789"
 
     compressed = packager.compress_bag(bag_identifier, tmp_path, {})
+    assert compressed.is_file()
+    assert not tmp_path.exists()
+
+
+def test_compress_embargoed_bag():
+    packager = Packager(*ARGS)
+    fixture_path = Path('tests', 'fixtures', packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.refid)
+    copytree(fixture_path, tmp_path)
+    bagit.make_bag(tmp_path)
+
+    compressed = packager.compress_embargoed_bag(tmp_path)
     assert compressed.is_file()
     assert not tmp_path.exists()
 
