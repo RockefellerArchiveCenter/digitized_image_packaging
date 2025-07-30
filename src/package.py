@@ -71,10 +71,13 @@ class Packager(object):
             self.move_to_tmp(bag_dir)
             self.deliver_pdf(as_uri)
             self.create_bag(bag_dir, self.rights_ids, as_data)
-            bag_json = self.get_bag_json(
-                bag_identifier, as_data['display_string'], rights_data)
-            compressed_path = self.compress_bag(
-                bag_identifier, bag_dir, bag_json)
+            if self.is_embargoed:
+                compressed_path = self.compress_embargoed_bag(bag_dir)
+            else:
+                bag_json = self.get_bag_json(
+                    bag_identifier, as_data['display_string'], rights_data)
+                compressed_path = self.compress_bag(
+                    bag_identifier, bag_dir, bag_json)
             self.deliver_package(compressed_path)
             self.cleanup_successful_job()
             self.deliver_success_notification()
@@ -263,6 +266,24 @@ class Packager(object):
             "origin": 'digitization',
             "rights_statements": rights_data
         }
+
+    def compress_embargoed_bag(self, bag_dir):
+        """Creates a compressed archive file from a bag.
+
+        This archive file contains the binary files as a Bagit bag.
+
+         Args:
+            bag_dir (pathlib.Path): directory containing local files.
+
+        Returns:
+            compressed_path (pathlib.Path): path of compressed archive.
+        """
+        compressed_path = Path(f"{bag_dir}.tar.gz")
+        with tarfile.open(str(compressed_path), "w:gz") as tar:
+            tar.add(bag_dir, arcname=self.refid)
+        rmtree(bag_dir)
+        logging.debug(f'Compressed bag {compressed_path} created.')
+        return compressed_path
 
     def compress_bag(self, bag_identifier, bag_dir, bag_json):
         """Creates a compressed archive file from a bag.
