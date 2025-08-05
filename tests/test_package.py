@@ -21,7 +21,7 @@ ARGS = ['us-east-1',
         'b90862f3baceaae3b7418c78f9d50d52',
         '1,2',
         'tmp',
-        'source',
+        'source_bucket',
         'destination_bucket',
         'pdf_bucket',
         'embargoed_destination_bucket',
@@ -112,7 +112,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
     mock_compress_embargoed.assert_not_called()
     mock_bag_json.assert_called_once_with(ANY, "foo", [])
     mock_create.assert_called_once_with(bag_dir, packager.rights_ids, as_data)
-    mock_move.assert_called_once_with(bag_dir)
+    mock_move.assert_called_once_with()
     mock_has_embargo.assert_called_once_with(rights_data)
     mock_rights_data.assert_called_once_with(packager.rights_ids, as_data)
     mock_as_data.assert_called_once_with(as_uri)
@@ -199,15 +199,26 @@ def test_get_active_rights_acts():
             assert parsed == expected
 
 
+@mock_aws
 def test_move_to_tmp():
     """Asserts packages are moved to temp directory as expected."""
     packager = Packager(*ARGS)
-    src_path = Path(packager.source_dir, packager.refid)
     tmp_path = Path(packager.tmp_dir, packager.refid)
+    client = boto3.client('s3')
+    client.create_bucket(Bucket=packager.source_bucket)
     fixture_path = Path('tests', 'fixtures', packager.refid)
-    copytree(fixture_path, src_path)
+    for dirpath, _, files in fixture_path.walk():
+        for f in files:
+            source = dirpath / f
+            destination = Path(
+                packager.refid,
+                source.relative_to(fixture_path))
+            client.upload_file(
+                str(source),
+                packager.source_bucket,
+                str(destination))
 
-    packager.move_to_tmp(tmp_path)
+    packager.move_to_tmp()
 
     assert tmp_path.is_dir()
     assert (tmp_path / 'service').is_dir()
@@ -415,13 +426,25 @@ def test_deliver_package():
             assert not tmp_path.exists()
 
 
+@mock_aws
 def test_deliver_pdf():
     """Asserts compressed package is delivered and local copy is removed."""
     packager = Packager(*ARGS)
     as_uri = "/repositories/2/archival_objects/1234"
     fixture_path = Path('tests', 'fixtures', packager.refid)
-    src_path = Path(packager.source_dir, packager.refid)
-    copytree(fixture_path, src_path)
+    client = boto3.client('s3')
+    client.create_bucket(Bucket=packager.source_bucket)
+    fixture_path = Path('tests', 'fixtures', packager.refid)
+    for dirpath, _, files in fixture_path.walk():
+        for f in files:
+            source = dirpath / f
+            destination = Path(
+                packager.refid,
+                source.relative_to(fixture_path))
+            client.upload_file(
+                str(source),
+                packager.source_bucket,
+                str(destination))
 
     for is_embargoed, destination_bucket, destination_key in [
             (False, packager.pdf_destination_bucket,
@@ -438,6 +461,7 @@ def test_deliver_pdf():
                 Key=destination_key)
 
 
+@mock_aws
 def test_cleanup_successful_job():
     """Asserts successful job is cleaned up as expected."""
     packager = Packager(*ARGS)
@@ -445,14 +469,27 @@ def test_cleanup_successful_job():
         'tests',
         'fixtures',
         'b90862f3baceaae3b7418c78f9d50d52')
-    src_path = Path(packager.source_dir, packager.refid)
-    copytree(fixture_path, src_path)
+    client = boto3.client('s3')
+    client.create_bucket(Bucket=packager.source_bucket)
+    fixture_path = Path('tests', 'fixtures', packager.refid)
+    for dirpath, _, files in fixture_path.walk():
+        for f in files:
+            source = dirpath / f
+            destination = Path(
+                packager.refid,
+                source.relative_to(fixture_path))
+            client.upload_file(
+                str(source),
+                packager.source_bucket,
+                str(destination))
 
     packager.cleanup_successful_job()
 
-    source_objects = list(src_path.glob('*'))
+    object_count = client.list_objects_v2(
+        Bucket=packager.source_bucket,
+        Prefix=packager.refid)['KeyCount']
 
-    assert len(source_objects) == 0
+    assert object_count == 0
 
 
 def test_cleanup_failed_job():
