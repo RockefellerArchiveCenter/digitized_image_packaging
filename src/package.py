@@ -5,7 +5,7 @@ import tarfile
 import traceback
 from datetime import datetime
 from pathlib import Path
-from shutil import copy2, rmtree
+from shutil import rmtree
 from uuid import uuid4
 
 import bagit
@@ -28,7 +28,7 @@ logging.getLogger("bagit").setLevel(logging.ERROR)
 class Packager(object):
 
     def __init__(self, region, role_arn, ssm_parameter_path, refid,
-                 rights_ids, tmp_dir, source_dir, destination_bucket,
+                 rights_ids, tmp_dir, source_bucket, destination_bucket,
                  pdf_destination_bucket, embargoed_destination_bucket,
                  embargoed_pdf_destination_bucket, sns_topic):
         self.region = region
@@ -36,7 +36,7 @@ class Packager(object):
         self.refid = refid
         self.rights_ids = [r.strip() for r in rights_ids.split(',')]
         self.tmp_dir = tmp_dir
-        self.source_dir = source_dir
+        self.source_bucket = source_bucket
         self.destination_bucket = destination_bucket
         self.embargoed_destination_bucket = embargoed_destination_bucket
         self.pdf_destination_bucket = pdf_destination_bucket
@@ -68,7 +68,7 @@ class Packager(object):
             rights_data = aquila_client.get_rights_data(
                 self.rights_ids, as_data)
             self.is_embargoed = self.has_embargo(rights_data)
-            self.move_to_tmp(bag_dir)
+            self.move_to_tmp()
             self.deliver_pdf(as_uri)
             self.create_bag(bag_dir, self.rights_ids, as_data)
             if self.is_embargoed:
@@ -123,20 +123,28 @@ class Packager(object):
             "uri": as_uri
         }
 
-    def move_to_tmp(self, dest_dir):
-        """Copies files from source directory into temporary directory
+    def move_to_tmp(self):
+        """Copies files from source bucket into temporary directory."""
+        client = self.get_client_with_role('s3', self.role_arn)
+        paginator = client.get_paginator('list_objects_v2')
+        for prefix in [f'{self.refid}/master', f'{self.refid}/master_edited']:
+            pages = paginator.paginate(
+                Bucket=self.source_bucket,
+                Prefix=prefix)
 
-        Args:
-            dest_dir (pathlib.Path instances): destination directory of files.
-        """
-        source_dir = Path(self.source_dir, self.refid)
-        dest_dir.mkdir()
-        for src, dest in [
-                ((source_dir / 'master'), dest_dir),
-                ((source_dir / 'master_edited'), dest_dir / 'service')]:
-            dest.mkdir(exist_ok=True)
-            for fp in src.glob('*.tif'):
-                copy2(fp, f'{dest}/{fp.name}')
+            for page in pages:
+                if 'Contents' in page:
+                    for obj in page['Contents']:
+                        new_path = obj['Key'].replace(
+                            'master_edited',
+                            'service') if 'master_edited' in prefix else obj['Key'].replace(
+                            'master/',
+                            'service')
+                        destination_path = Path(self.tmp_dir, new_path)
+                        destination_path.parent.mkdir(
+                            parents=True, exist_ok=True)
+                        client.download_file(
+                            self.source_bucket, obj['Key'], str(destination_path))
 
     def uri_from_refid(self, refid):
         """Uses the find_by_id endpoint in AS to return the URI of an archival object.
@@ -398,11 +406,12 @@ class Packager(object):
         Args:
             as_uri (str): URI for archival object in ArchivesSpace
         """
-        pdf_path = Path(
-            self.source_dir,
-            self.refid,
-            'service_edited',
-            f'{self.refid}.pdf')
+        client = self.get_client_with_role('s3', self.role_arn)
+        pdf_path = Path(self.tmp_dir, f'{self.refid}.pdf')
+        client.download_file(
+            self.source_bucket,
+            f'{self.refid}/service_edited/{self.refid}.pdf',
+            str(pdf_path))
         destination = self.embargoed_pdf_destination_bucket if self.is_embargoed else self.pdf_destination_bucket
         target_path = f'{self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
         self.upload_file(
@@ -411,11 +420,32 @@ class Packager(object):
             target_path,
             'application/pdf',
             self.is_embargoed)
+        pdf_path.unlink()
         logging.debug(f'PDF delivered to {destination}.')
 
     def cleanup_successful_job(self):
         """Remove artifacts from successful job."""
-        rmtree(Path(self.source_dir, self.refid))
+        client = self.get_client_with_role('s3', self.role_arn)
+        paginator = client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(
+            Bucket=self.source_bucket,
+            Prefix=self.refid)
+
+        objects_to_delete = []
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    objects_to_delete.append({'Key': obj['Key']})
+
+        if objects_to_delete:
+            for i in range(0, len(objects_to_delete), 1000):
+                batch = objects_to_delete[i:i + 1000]
+                response = client.delete_objects(
+                    Bucket=self.source_bucket,
+                    Delete={'Objects': batch, 'Quiet': True})
+                if 'Errors' in response:
+                    errors = "\n".join([e["Key"] for e in response["errors"]])
+                    raise Exception(f'Error deleting objects: {errors}')
         logging.debug('Cleanup from successful job completed.')
 
     def cleanup_failed_job(self, bag_dir):
@@ -523,7 +553,7 @@ if __name__ == '__main__':
     region = os.environ.get('AWS_REGION')
     role_arn = os.environ.get('AWS_ROLE_ARN')
     tmp_dir = os.environ.get('TMP_DIR')
-    source_dir = os.environ.get('SOURCE_DIR')
+    source_bucket = os.environ.get('AWS_SOURCE_BUCKET')
     destination_bucket = os.environ.get('AWS_DESTINATION_BUCKET')
     pdf_destination_bucket = os.environ.get('AWS_PDF_DESTINATION_BUCKET')
     embargoed_destination_bucket = os.environ.get(
@@ -540,7 +570,7 @@ if __name__ == '__main__':
         refid,
         rights_ids,
         tmp_dir,
-        source_dir,
+        source_bucket,
         destination_bucket,
         pdf_destination_bucket,
         embargoed_destination_bucket,
