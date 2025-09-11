@@ -123,6 +123,13 @@ class Packager(object):
             "uri": as_uri
         }
 
+    def get_download_path(self, current_path):
+        if 'master_edited' in current_path:
+            new_path = current_path.replace('master_edited', 'service')
+        else:
+            new_path = current_path.replace('master', 'service')
+        return new_path
+
     def move_to_tmp(self):
         """Copies files from source bucket into temporary directory."""
         client = self.get_client_with_role('s3', self.role_arn)
@@ -135,11 +142,7 @@ class Packager(object):
             for page in pages:
                 if 'Contents' in page:
                     for obj in page['Contents']:
-                        new_path = obj['Key'].replace(
-                            'master_edited',
-                            'service') if 'master_edited' in prefix else obj['Key'].replace(
-                            'master/',
-                            'service')
+                        new_path = self.get_download_path(obj['Key'])
                         destination_path = Path(self.tmp_dir, new_path)
                         destination_path.parent.mkdir(
                             parents=True, exist_ok=True)
