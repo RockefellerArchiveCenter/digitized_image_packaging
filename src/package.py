@@ -127,7 +127,7 @@ class Packager(object):
         if 'master_edited' in current_path:
             new_path = current_path.replace('master_edited', 'service')
         else:
-            new_path = current_path.replace('master', 'service')
+            new_path = current_path.replace('master/', '')
         return new_path
 
     def move_to_tmp(self):
