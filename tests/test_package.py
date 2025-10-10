@@ -222,7 +222,7 @@ def test_move_to_tmp():
 
     assert tmp_path.is_dir()
     assert (tmp_path / 'service').is_dir()
-    assert len(list(tmp_path.rglob('*.tif'))) == 2
+    assert len(list(tmp_path.rglob('*.tif'))) == 4
     assert len(list((tmp_path / 'service').glob('*.tif'))) == 2
 
 
@@ -230,7 +230,7 @@ def test_get_download_path():
     packager = Packager(*ARGS)
     for input, expected in [
             ('/foo/master_edited/foo_001.tif', '/foo/service/foo_001.tif'),
-            ('/foo/master/foo_001.tif', '/foo/service/foo_001.tif')]:
+            ('/foo/master/foo_001.tif', '/foo/foo_001.tif')]:
         output = packager.get_download_path(input)
         assert output == expected
 
