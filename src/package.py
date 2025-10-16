@@ -158,7 +158,8 @@ class Packager(object):
         Returns:
             as_uri (str): URI for archival object matching refid.
         """
-        find_by_refid_url = f"repositories/{self.as_repo}/find_by_id/archival_objects?ref_id[]={refid}"
+        find_by_refid_url = f"repositories/{
+            self.as_repo}/find_by_id/archival_objects?ref_id[]={refid}"
         resp = self.as_client.get(find_by_refid_url)
         resp.raise_for_status()
         results = resp.json()
@@ -358,7 +359,9 @@ class Packager(object):
                 split_destination = split_path[0].split('_')
                 if len(split_destination) == 2:
                     current_iterator = int(split_destination[1])
-                    updated_destination = f'{split_destination[0]}_{current_iterator + 1}'
+                    updated_destination = f'{
+                        split_destination[0]}_{
+                        current_iterator + 1}'
                 else:
                     updated_destination = f'{split_destination[0]}_1'
                 self.upload_file(
@@ -416,7 +419,8 @@ class Packager(object):
             f'{self.refid}/service_edited/{self.refid}.pdf',
             str(pdf_path))
         destination = self.embargoed_pdf_destination_bucket if self.is_embargoed else self.pdf_destination_bucket
-        target_path = f'{self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
+        target_path = f'{
+            self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
         self.upload_file(
             destination,
             pdf_path,
@@ -564,7 +568,8 @@ if __name__ == '__main__':
     embargoed_pdf_destination_bucket = os.environ.get(
         'AWS_EMBARGOED_PDF_DESTINATION_BUCKET')
     sns_topic = os.environ.get('AWS_SNS_TOPIC')
-    ssm_parameter_path = f"/{os.environ.get('ENV')}/{os.environ.get('APP_CONFIG_PATH')}"
+    ssm_parameter_path = f"/{os.environ.get('ENV')
+                             }/{os.environ.get('APP_CONFIG_PATH')}"
 
     Packager(
         region,
