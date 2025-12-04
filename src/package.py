@@ -75,7 +75,7 @@ class Packager(object):
                 compressed_path = self.compress_embargoed_bag(bag_dir)
             else:
                 bag_json = self.get_bag_json(
-                    bag_identifier, as_data['display_string'], rights_data)
+                    bag_identifier, as_data['display_string'], rights_data, as_data['uri'])
                 compressed_path = self.compress_bag(
                     bag_identifier, bag_dir, bag_json)
             self.deliver_package(compressed_path)
@@ -270,12 +270,13 @@ class Packager(object):
         logging.debug(
             f'Bag created from {bag_dir} with Rights IDs {rights_ids}.')
 
-    def get_bag_json(self, identifier, title, rights_data):
+    def get_bag_json(self, identifier, title, rights_data, as_uri):
         return {
             "identifier": identifier,
             "title": title,
             "origin": 'digitization',
-            "rights_statements": rights_data
+            "rights_statements": rights_data,
+            "archivesspace_identifier": as_uri
         }
 
     def compress_embargoed_bag(self, bag_dir):
