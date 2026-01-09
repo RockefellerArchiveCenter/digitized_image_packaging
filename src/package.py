@@ -448,7 +448,7 @@ class Packager(object):
                     Bucket=self.source_bucket,
                     Delete={'Objects': batch, 'Quiet': True})
                 if 'Errors' in response:
-                    errors = "\n".join([e["Key"] for e in response["errors"]])
+                    errors = "\n".join([e["Key"] for e in response["Errors"]])
                     raise Exception(f'Error deleting objects: {errors}')
         logging.debug('Cleanup from successful job completed.')
 
