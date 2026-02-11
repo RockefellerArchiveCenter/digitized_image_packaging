@@ -310,25 +310,33 @@ class Packager(object):
         Returns:
             compressed_path (pathlib.Path): path of compressed archive.
         """
-        root_dir = Path(self.tmp_dir, bag_identifier)
-        outer_compressed_path = Path(self.tmp_dir, f"{bag_identifier}.tar.gz")
-        inner_compressed_path = root_dir / f"{bag_identifier}.tar.gz"
-        root_dir.mkdir()
-        with tarfile.open(str(inner_compressed_path), "w:gz") as tar:
+        compressed_path = Path(self.tmp_dir, f"{bag_identifier}.tar.gz")
+
+        """Compress bag contents"""
+        with tarfile.open(str(compressed_path), "w:gz") as tar:
             tar.add(bag_dir, arcname=bag_identifier)
-        with open(Path(root_dir, f"{bag_identifier}.json"), "w") as json_file:
+
+        """Empty out root directory"""
+        rmtree(bag_dir)
+        bag_dir.mkdir()
+
+        """Add contents to empty root directory"""
+        compressed_path.rename(Path(bag_dir, f"{bag_identifier}.tar.gz"))
+        with open(Path(bag_dir, f"{bag_identifier}.json"), "w") as json_file:
             json.dump(
                 bag_json,
                 json_file,
                 indent=4,
                 sort_keys=True,
                 default=str)
-        with tarfile.open(str(outer_compressed_path), "w:gz") as tar:
-            tar.add(root_dir, arcname=bag_identifier)
+
+        """Compress root directory"""
+        with tarfile.open(str(compressed_path), "w:gz") as tar:
+            tar.add(bag_dir, arcname=bag_identifier)
+
         rmtree(bag_dir)
-        rmtree(root_dir)
-        logging.debug(f'Compressed bag {outer_compressed_path} created.')
-        return outer_compressed_path
+        logging.debug(f'Compressed bag {compressed_path} created.')
+        return compressed_path
 
     def upload_file(self, bucket, source_file_path,
                     destination_path, content_type, increment_if_exists):

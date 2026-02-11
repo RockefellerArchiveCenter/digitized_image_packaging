@@ -343,12 +343,11 @@ def test_compress_bag():
     """Asserts compressed files are correctly created and original directory is removed."""
     packager = Packager(*ARGS)
     fixture_path = Path('tests', 'fixtures', packager.refid)
-    tmp_path = Path(packager.tmp_dir, packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.package_id)
     copytree(fixture_path, tmp_path)
     bagit.make_bag(tmp_path)
-    bag_identifier = "123456789"
 
-    compressed = packager.compress_bag(bag_identifier, tmp_path, {})
+    compressed = packager.compress_bag(packager.package_id, tmp_path, {})
     assert compressed.is_file()
     assert not tmp_path.exists()
 
