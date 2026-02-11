@@ -19,6 +19,7 @@ ARGS = ['us-east-1',
         'digitized-image-packaging-role-arn',
         '/dev/digitized_image_packaging',
         'b90862f3baceaae3b7418c78f9d50d52',
+        '956b9082-e753-42f4-b354-d6f48231ea7b',
         '1,2',
         'tmp',
         'source_bucket',
@@ -86,7 +87,7 @@ def test_run(mock_notification, mock_cleanup, mock_pdf, mock_deliver, mock_compr
              mock_move, mock_has_embargo, mock_rights_data, mock_as_data, mock_as_uri, mock_aquila, mock_config):
     """Asserts run method calls other methods."""
     packager = Packager(*ARGS)
-    bag_dir = Path(packager.tmp_dir, packager.refid)
+    bag_dir = Path(packager.tmp_dir, packager.package_id)
     aquila_baseurl = 'https://aquila.rockarch.org/api/'
     mock_aquila.return_value = None
     config = {'AQUILA_BASEURL': aquila_baseurl}
@@ -133,7 +134,7 @@ def test_run_with_exception(
     mock_as_uri.side_effect = exception
     packager.run()
     mock_cleanup.assert_called_once_with(
-        Path(packager.tmp_dir, packager.refid))
+        Path(packager.tmp_dir, packager.package_id))
     mock_notification.assert_called_once_with(exception)
     mock_config.assert_called_once_with(packager.ssm_parameter_path)
 
@@ -203,7 +204,7 @@ def test_get_active_rights_acts():
 def test_move_to_tmp():
     """Asserts packages are moved to temp directory as expected."""
     packager = Packager(*ARGS)
-    tmp_path = Path(packager.tmp_dir, packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.package_id)
     client = boto3.client('s3')
     client.create_bucket(Bucket=packager.source_bucket)
     fixture_path = Path('tests', 'fixtures', packager.refid)
@@ -211,7 +212,7 @@ def test_move_to_tmp():
         for f in files:
             source = dirpath / f
             destination = Path(
-                packager.refid,
+                packager.package_id,
                 source.relative_to(fixture_path))
             client.upload_file(
                 str(source),
@@ -259,7 +260,7 @@ def test_create_bag():
     assert bag.info['ArchivesSpace-URI'] == '/repositories/2/archival_objects/1234'
     assert bag.info['Start-Date'] == '1999-01-01'
     assert bag.info['End-Date'] == '2000-12-31'
-    assert bag.info['Rights-ID'] == ARGS[4].split(',')
+    assert bag.info['Rights-ID'] == packager.rights_ids
     assert bag.info['Title'] == 'foobar'
     assert bag.info['BagIt-Profile-Identifier'] == 'zorya_bagit_profile.json'
 
@@ -355,7 +356,7 @@ def test_compress_bag():
 def test_compress_embargoed_bag():
     packager = Packager(*ARGS)
     fixture_path = Path('tests', 'fixtures', packager.refid)
-    tmp_path = Path(packager.tmp_dir, packager.refid)
+    tmp_path = Path(packager.tmp_dir, packager.package_id)
     copytree(fixture_path, tmp_path)
     bagit.make_bag(tmp_path)
 
@@ -450,7 +451,7 @@ def test_deliver_pdf():
         for f in files:
             source = dirpath / f
             destination = Path(
-                packager.refid,
+                packager.package_id,
                 source.relative_to(fixture_path))
             client.upload_file(
                 str(source),
@@ -458,8 +459,7 @@ def test_deliver_pdf():
                 str(destination))
 
     for is_embargoed, destination_bucket, destination_key in [
-            (False, packager.pdf_destination_bucket,
-             f'pdfs/{shortuuid.uuid(as_uri)}'),
+            (False, packager.pdf_destination_bucket, f'pdfs/{shortuuid.uuid(as_uri)}'),
             (True, packager.embargoed_pdf_destination_bucket, f'{packager.refid}.pdf')]:
         with mock_aws():
             packager.is_embargoed = is_embargoed
@@ -487,7 +487,7 @@ def test_cleanup_successful_job():
         for f in files:
             source = dirpath / f
             destination = Path(
-                packager.refid,
+                packager.package_id,
                 source.relative_to(fixture_path))
             client.upload_file(
                 str(source),
@@ -498,7 +498,7 @@ def test_cleanup_successful_job():
 
     object_count = client.list_objects_v2(
         Bucket=packager.source_bucket,
-        Prefix=packager.refid)['KeyCount']
+        Prefix=packager.package_id)['KeyCount']
 
     assert object_count == 0
 
@@ -549,6 +549,7 @@ def test_deliver_success_notification(mock_role):
     message_body = json.loads(messages[0].body)
     assert message_body['MessageAttributes']['outcome']['Value'] == 'SUCCESS'
     assert message_body['MessageAttributes']['refid']['Value'] == packager.refid
+    assert message_body['MessageAttributes']['package_id']['Value'] == packager.package_id
 
 
 @mock_aws
@@ -580,5 +581,6 @@ def test_deliver_failure_notification(mock_traceback, mock_role):
     message_body = json.loads(messages[0].body)
     assert message_body['MessageAttributes']['outcome']['Value'] == 'FAILURE'
     assert message_body['MessageAttributes']['refid']['Value'] == packager.refid
+    assert message_body['MessageAttributes']['package_id']['Value'] == packager.package_id
     assert exception_message in message_body['MessageAttributes']['message']['Value']
     assert message_body['MessageAttributes']['traceback']['Value'] == 'baz'
