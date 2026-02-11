@@ -289,7 +289,7 @@ class Packager(object):
         Returns:
             compressed_path (pathlib.Path): path of compressed archive.
         """
-        compressed_path = Path(f"{self.refid}.tar.gz")
+        compressed_path = Path(self.tmp_dir, f"{self.refid}.tar.gz")
         with tarfile.open(str(compressed_path), "w:gz") as tar:
             tar.add(bag_dir, arcname=self.refid)
         rmtree(bag_dir)
