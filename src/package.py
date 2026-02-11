@@ -410,15 +410,20 @@ class Packager(object):
             as_uri (str): URI for archival object in ArchivesSpace
         """
         client = self.get_client_with_role('s3', self.role_arn)
+        pdf_path = Path(self.tmp_dir, f'{self.package_id}.pdf')
+        client.download_file(
+            self.source_bucket,
+            f'{self.package_id}/service_edited/{self.refid}.pdf',
+            str(pdf_path))
         destination = self.embargoed_pdf_destination_bucket if self.is_embargoed else self.pdf_destination_bucket
         target_path = f'{self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
-        client.copy_object(
-            CopySource={
-                'Bucket': self.source_bucket,
-                'Key': f'{self.package_id}/service_edited/{self.refid}.pdf'
-            },
-            Bucket=destination,
-            Key=target_path)
+        self.upload_file(
+            destination,
+            pdf_path,
+            target_path,
+            'application/pdf',
+            self.is_embargoed)
+        pdf_path.unlink()
         logging.debug(f'PDF delivered to {destination}.')
 
     def cleanup_successful_job(self):
