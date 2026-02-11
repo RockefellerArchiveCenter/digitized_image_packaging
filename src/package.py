@@ -6,7 +6,6 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 from shutil import rmtree
-from uuid import uuid4
 
 import bagit
 import boto3
@@ -27,13 +26,14 @@ logging.getLogger("bagit").setLevel(logging.ERROR)
 
 class Packager(object):
 
-    def __init__(self, region, role_arn, ssm_parameter_path, refid,
+    def __init__(self, region, role_arn, ssm_parameter_path, refid, package_id,
                  rights_ids, tmp_dir, source_bucket, destination_bucket,
                  pdf_destination_bucket, embargoed_destination_bucket,
                  embargoed_pdf_destination_bucket, sns_topic):
         self.region = region
         self.role_arn = role_arn
         self.refid = refid
+        self.package_id = package_id
         self.rights_ids = [r.strip() for r in rights_ids.split(',')]
         self.tmp_dir = tmp_dir
         self.source_bucket = source_bucket
@@ -51,10 +51,9 @@ class Packager(object):
     def run(self):
         """Main method, which calls all other methods."""
         logging.debug(
-            f'Packaging started for package {self.refid}.')
+            f'Packaging started for package {self.package_id}.')
         try:
-            bag_dir = Path(self.tmp_dir, self.refid)
-            bag_identifier = str(uuid4())
+            bag_dir = Path(self.tmp_dir, self.package_id)
             config = self.get_config(self.ssm_parameter_path)
             aquila_client = AquilaClient(config.get('AQUILA_BASEURL'))
             self.as_client = ASpace(
@@ -63,7 +62,7 @@ class Packager(object):
                 password=config.get('AS_PASSWORD')
             ).client
             self.as_repo = config.get('AS_REPO')
-            as_uri = self.uri_from_refid(bag_dir.name)
+            as_uri = self.uri_from_refid(self.refid)
             as_data = self.get_as_data(as_uri)
             rights_data = aquila_client.get_rights_data(
                 self.rights_ids, as_data)
@@ -75,14 +74,14 @@ class Packager(object):
                 compressed_path = self.compress_embargoed_bag(bag_dir)
             else:
                 bag_json = self.get_bag_json(
-                    bag_identifier, as_data['display_string'], rights_data, as_data['uri'])
+                    self.package_id, as_data['display_string'], rights_data, as_data['uri'])
                 compressed_path = self.compress_bag(
-                    bag_identifier, bag_dir, bag_json)
+                    self.package_id, bag_dir, bag_json)
             self.deliver_package(compressed_path)
             self.cleanup_successful_job()
             self.deliver_success_notification()
             logging.info(
-                f'Package {self.refid} successfully packaged.')
+                f'Package {self.package_id} successfully packaged.')
         except Exception as e:
             logging.exception(e)
             self.cleanup_failed_job(bag_dir)
@@ -134,7 +133,7 @@ class Packager(object):
         """Copies files from source bucket into temporary directory."""
         client = self.get_client_with_role('s3', self.role_arn)
         paginator = client.get_paginator('list_objects_v2')
-        for prefix in [f'{self.refid}/master', f'{self.refid}/master_edited']:
+        for prefix in [f'{self.package_id}/master', f'{self.package_id}/master_edited']:
             pages = paginator.paginate(
                 Bucket=self.source_bucket,
                 Prefix=prefix)
@@ -290,7 +289,7 @@ class Packager(object):
         Returns:
             compressed_path (pathlib.Path): path of compressed archive.
         """
-        compressed_path = Path(f"{bag_dir}.tar.gz")
+        compressed_path = Path(f"{self.refid}.tar.gz")
         with tarfile.open(str(compressed_path), "w:gz") as tar:
             tar.add(bag_dir, arcname=self.refid)
         rmtree(bag_dir)
@@ -411,20 +410,15 @@ class Packager(object):
             as_uri (str): URI for archival object in ArchivesSpace
         """
         client = self.get_client_with_role('s3', self.role_arn)
-        pdf_path = Path(self.tmp_dir, f'{self.refid}.pdf')
-        client.download_file(
-            self.source_bucket,
-            f'{self.refid}/service_edited/{self.refid}.pdf',
-            str(pdf_path))
         destination = self.embargoed_pdf_destination_bucket if self.is_embargoed else self.pdf_destination_bucket
         target_path = f'{self.refid}.pdf' if self.is_embargoed else f'pdfs/{shortuuid.uuid(as_uri)}'
-        self.upload_file(
-            destination,
-            pdf_path,
-            target_path,
-            'application/pdf',
-            self.is_embargoed)
-        pdf_path.unlink()
+        client.copy_object(
+            CopySource={
+                'Bucket': self.source_bucket,
+                'Key': f'{self.package_id}/service_edited/{self.refid}.pdf'
+            },
+            Bucket=destination,
+            Key=target_path)
         logging.debug(f'PDF delivered to {destination}.')
 
     def cleanup_successful_job(self):
@@ -433,7 +427,7 @@ class Packager(object):
         paginator = client.get_paginator('list_objects_v2')
         pages = paginator.paginate(
             Bucket=self.source_bucket,
-            Prefix=self.refid)
+            Prefix=self.package_id)
 
         objects_to_delete = []
         for page in pages:
@@ -468,11 +462,15 @@ class Packager(object):
         client = self.get_client_with_role('sns', self.role_arn)
         client.publish(
             TopicArn=self.sns_topic,
-            Message=f'Package {self.refid} successfully packaged.',
+            Message=f'Package {self.package_id} successfully packaged.',
             MessageAttributes={
                 'refid': {
                     'DataType': 'String',
                     'StringValue': self.refid,
+                },
+                'package_id': {
+                    'DataType': 'String',
+                    'StringValue': self.package_id,
                 },
                 'service': {
                     'DataType': 'String',
@@ -495,11 +493,15 @@ class Packager(object):
         tb = ''.join(traceback.format_exception(exception)[:-1])
         client.publish(
             TopicArn=self.sns_topic,
-            Message=f'Package {self.refid} failed packaging.',
+            Message=f'Package {self.package_id} failed packaging.',
             MessageAttributes={
                 'refid': {
                     'DataType': 'String',
                     'StringValue': self.refid,
+                },
+                'package_id': {
+                    'DataType': 'String',
+                    'StringValue': self.package_id,
                 },
                 'service': {
                     'DataType': 'String',
@@ -553,6 +555,7 @@ class Packager(object):
 
 if __name__ == '__main__':
     refid = os.environ.get('REFID')
+    package_id = os.environ.get('PACKAGE_ID')
     rights_ids = os.environ.get('RIGHTS_IDS')
     region = os.environ.get('AWS_REGION')
     role_arn = os.environ.get('AWS_ROLE_ARN')
@@ -572,6 +575,7 @@ if __name__ == '__main__':
         role_arn,
         ssm_parameter_path,
         refid,
+        package_id,
         rights_ids,
         tmp_dir,
         source_bucket,
