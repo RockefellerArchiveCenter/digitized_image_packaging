@@ -454,9 +454,10 @@ class Packager(object):
                 response = client.delete_objects(
                     Bucket=self.source_bucket,
                     Delete={'Objects': batch, 'Quiet': True})
-                if 'Errors' in response:
-                    errors = "\n".join([e["Key"] for e in response["Errors"]])
-                    raise Exception(f'Error deleting objects: {errors}')
+                for e in response.get('Errors', []):
+                    client.delete_object(
+                        Bucket=self.source_bucket,
+                        Key=e['Key'])
         logging.debug('Cleanup from successful job completed.')
 
     def cleanup_failed_job(self, bag_dir):
