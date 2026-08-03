@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.2](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.0.1...v1.0.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **deps:** Scheduled dependency updates ([f5f8688](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/f5f86886ce7b8e877e721972353e823454433bfd))
+* **deps:** Scheduled dependency updates ([f5f8688](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/f5f86886ce7b8e877e721972353e823454433bfd))
+* **deps:** Scheduled dependency updates ([b3d5174](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/b3d5174b5a9a182f2fcc7aae64c4b41a35e3c5ba))
+* **deps:** Scheduled dependency updates ([b3d5174](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/b3d5174b5a9a182f2fcc7aae64c4b41a35e3c5ba))
+* **deps:** Scheduled dependency updates ([89f7e2c](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/89f7e2c131d57c7e29041cc7414c61441968ac65))
+
 ## [1.0.1](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.0.0...v1.0.1) (2026-07-06)
 
 
