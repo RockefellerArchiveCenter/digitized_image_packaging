@@ -227,6 +227,33 @@ def test_move_to_tmp():
     assert len(list((tmp_path / 'service').glob('*.tif'))) == 2
 
 
+@mock_aws
+def test_move_to_tmp_without_service():
+    """Asserts packages without master_edited directories are moved to temp directory as expected."""
+    packager = Packager(*ARGS)
+    tmp_path = Path(packager.tmp_dir, packager.package_id)
+    client = boto3.client('s3')
+    client.create_bucket(Bucket=packager.source_bucket)
+    fixture_path = Path('tests', 'fixtures', f"{packager.refid}_no_master_edited")
+    for dirpath, _, files in fixture_path.walk():
+        for f in files:
+            source = dirpath / f
+            destination = Path(
+                packager.package_id,
+                source.relative_to(fixture_path))
+            client.upload_file(
+                str(source),
+                packager.source_bucket,
+                str(destination))
+
+    packager.move_to_tmp()
+
+    assert tmp_path.is_dir()
+    assert not (tmp_path / 'service').is_dir()
+    assert len(list(tmp_path.rglob('*.tif'))) == 2
+    assert len(list((tmp_path / 'service').glob('*.tif'))) == 0
+
+
 def test_get_download_path():
     packager = Packager(*ARGS)
     for input, expected in [
