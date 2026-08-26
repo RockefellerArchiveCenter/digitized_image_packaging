@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.0.2...v1.1.0) (2026-08-26)
+
+
+### Features
+
+* add test for packages without master_edited dir ([c319d3c](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/c319d3c9c87dea94c3a2be7eabccd01f83482fb1))
+* add tests for packages without master_edited directory ([a88e576](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/a88e5762a30d85f42fa855776a2d18c26c697d6d))
+
 ## [1.0.2](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.0.1...v1.0.2) (2026-08-03)
 
 
