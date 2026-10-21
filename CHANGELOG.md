@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.3](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.1.2...v1.1.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* update pip and deps ([90201fa](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/90201fa06d8f3eacc64ad935cdebce6b4e4924e3))
+* update pip and deps ([90201fa](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/90201fa06d8f3eacc64ad935cdebce6b4e4924e3))
+* update pip and deps ([8935f80](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/8935f80aa225a65852461a634d61f66d298b5436))
+* update pip and deps ([8935f80](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/8935f80aa225a65852461a634d61f66d298b5436))
+* update pip and deps ([9e3317a](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/9e3317ae1ce7aa0a43de1100762cdd4ea79f03fd))
+
 ## [1.1.2](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.1.1...v1.1.2) (2026-10-05)
 
 
