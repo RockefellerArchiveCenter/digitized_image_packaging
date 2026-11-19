@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.5](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.1.4...v1.1.5) (2026-11-19)
+
+
+### Bug Fixes
+
+* update deploy ([c1a002b](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/c1a002bed412c51715cafc4f0019958215aff050))
+* update deploy ([c5c788e](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/c5c788e08d632154fad7cdc219c4468316d136a2))
+* update deploy ([52b9a28](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/commit/52b9a2868eebd8a96289961c977ac74264086149))
+
 ## [1.1.4](https://github.com/RockefellerArchiveCenter/digitized_image_packaging/compare/v1.1.3...v1.1.4) (2026-11-02)
 
 
